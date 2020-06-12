@@ -21,6 +21,7 @@
 #include "toolmanager.h"
 
 #include "abstracttool.h"
+#include "actionmanager.h"
 #include "preferences.h"
 
 #include <QAction>
@@ -31,13 +32,6 @@ using namespace Tiled;
 ToolManager::ToolManager(QObject *parent)
     : QObject(parent)
     , mActionGroup(new QActionGroup(this))
-    , mSelectedTool(nullptr)
-    , mDisabledTool(nullptr)
-    , mPreviouslyDisabledTool(nullptr)
-    , mMapDocument(nullptr)
-    , mTile(nullptr)
-    , mObjectTemplate(nullptr)
-    , mSelectEnabledToolPending(false)
 {
     mActionGroup->setExclusive(true);
     connect(mActionGroup, &QActionGroup::triggered,
@@ -49,6 +43,15 @@ ToolManager::ToolManager(QObject *parent)
 
 ToolManager::~ToolManager()
 {
+}
+
+/**
+ * Can be used to disable the registration of actions with the ActionManager.
+ * Should be called before any tools are registered.
+ */
+void ToolManager::setRegisterActions(bool enabled)
+{
+    mRegisterActions = enabled;
 }
 
 /**
@@ -85,24 +88,29 @@ QAction *ToolManager::registerTool(AbstractTool *tool)
     toolAction->setShortcut(tool->shortcut());
     toolAction->setData(QVariant::fromValue<AbstractTool*>(tool));
     toolAction->setCheckable(true);
-    if (!tool->shortcut().isEmpty()) {
-        toolAction->setToolTip(
-                QString(QLatin1String("%1 (%2)")).arg(tool->name(),
-                                                      tool->shortcut().toString()));
-    } else {
-        toolAction->setToolTip(tool->name());
-    }
+    toolAction->setText(tool->name());
     toolAction->setEnabled(tool->isEnabled());
+    toolAction->setVisible(tool->isVisible());
 
     mActionGroup->addAction(toolAction);
 
+    connect(tool, &AbstractTool::changed,
+            this, &ToolManager::toolChanged);
+
     connect(tool, &AbstractTool::enabledChanged,
             this, &ToolManager::toolEnabledChanged);
+    connect(tool, &AbstractTool::visibleChanged,
+            this, [=] (bool visible) { toolAction->setVisible(visible); });
 
     // Select the first added tool
-    if (!mSelectedTool && tool->isEnabled()) {
-        setSelectedTool(tool);
-        toolAction->setChecked(true);
+    if (tool->isVisible()) {
+        if (!mSelectedTool && tool->isEnabled()) {
+            setSelectedTool(tool);
+            toolAction->setChecked(true);
+        }
+
+        if (mRegisterActions)
+            ActionManager::registerAction(toolAction, tool->id());
     }
 
     return toolAction;
@@ -112,7 +120,13 @@ void ToolManager::unregisterTool(AbstractTool *tool)
 {
     auto action = findAction(tool);
     Q_ASSERT(action);
+
+    if (mRegisterActions)
+        ActionManager::unregisterAction(action, tool->id());
+
     delete action;
+
+    tool->disconnect(this);
 
     if (mDisabledTool == tool)
         mDisabledTool = nullptr;
@@ -167,6 +181,17 @@ void ToolManager::actionTriggered(QAction *action)
     setSelectedTool(action->data().value<AbstractTool*>());
 }
 
+void ToolManager::toolChanged()
+{
+    auto tool = static_cast<AbstractTool*>(sender());
+
+    if (auto action = findAction(tool)) {
+        action->setText(tool->name());
+        action->setIcon(tool->icon());
+        action->setShortcut(tool->shortcut());
+    }
+}
+
 void ToolManager::retranslateTools()
 {
     // Allow the tools to adapt to the new language
@@ -175,16 +200,7 @@ void ToolManager::retranslateTools()
         AbstractTool *tool = action->data().value<AbstractTool*>();
         tool->languageChanged();
 
-        // Update the text, shortcut and tooltip of the action
         action->setText(tool->name());
-        action->setShortcut(tool->shortcut());
-        if (!tool->shortcut().isEmpty()) {
-            action->setToolTip(
-                        QString(QLatin1String("%1 (%2)")).arg(tool->name(),
-                                                              tool->shortcut().toString()));
-        } else {
-            action->setToolTip(tool->name());
-        }
     }
 }
 
@@ -243,8 +259,13 @@ void ToolManager::toolEnabledChanged(bool enabled)
         // all the tools to update their enabled state.
         if (!mSelectEnabledToolPending) {
             mSelectEnabledToolPending = true;
+#if QT_VERSION < QT_VERSION_CHECK(5, 10, 0)
             QMetaObject::invokeMethod(this, "selectEnabledTool",
                                       Qt::QueuedConnection);
+#else
+            QMetaObject::invokeMethod(this, &ToolManager::selectEnabledTool,
+                                      Qt::QueuedConnection);
+#endif
         }
     }
 }
@@ -271,7 +292,7 @@ AbstractTool *ToolManager::firstEnabledTool() const
     const auto actions = mActionGroup->actions();
     for (QAction *action : actions)
         if (AbstractTool *tool = action->data().value<AbstractTool*>())
-            if (tool->isEnabled())
+            if (tool->isEnabled() && tool->isVisible())
                 return tool;
 
     return nullptr;

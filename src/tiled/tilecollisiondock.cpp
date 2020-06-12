@@ -20,6 +20,7 @@
 
 #include "tilecollisiondock.h"
 
+#include "actionmanager.h"
 #include "addremovemapobject.h"
 #include "changetileobjectgroup.h"
 #include "createellipseobjecttool.h"
@@ -28,6 +29,8 @@
 #include "createpolygonobjecttool.h"
 #include "createrectangleobjecttool.h"
 #include "createtemplatetool.h"
+#include "editablemanager.h"
+#include "editablemapobject.h"
 #include "editpolygontool.h"
 #include "layermodel.h"
 #include "map.h"
@@ -40,6 +43,7 @@
 #include "objectselectiontool.h"
 #include "objectsview.h"
 #include "preferences.h"
+#include "scriptmanager.h"
 #include "tile.h"
 #include "tilelayer.h"
 #include "tileset.h"
@@ -53,7 +57,6 @@
 #include <QComboBox>
 #include <QCoreApplication>
 #include <QMenu>
-#include <QSettings>
 #include <QShortcut>
 #include <QSplitter>
 #include <QStatusBar>
@@ -64,8 +67,10 @@
 
 namespace Tiled {
 
-static const char OBJECTS_VIEW_VISIBILITY[] = "TileCollisionDock/ObjectsViewVisibility";
-static const char COLLISION_DOCK_SPLITTER_STATE[] = "TileCollisionDock/SplitterState";
+namespace preferences {
+static Preference<QVariant> objectsViewVisibility { "TileCollisionDock/ObjectsViewVisibility", TileCollisionDock::Hidden };
+static Preference<QByteArray> splitterState { "TileCollisionDock/SplitterState" };
+} // namespace preferences
 
 TileCollisionDock::TileCollisionDock(QWidget *parent)
     : QDockWidget(parent)
@@ -106,15 +111,15 @@ TileCollisionDock::TileCollisionDock(QWidget *parent)
     toolsToolBar->addAction(mToolManager->registerTool(templatesTool));
 
     mActionDuplicateObjects = new QAction(this);
-    mActionDuplicateObjects->setIcon(QIcon(QLatin1String(":/images/16x16/stock-duplicate-16.png")));
+    mActionDuplicateObjects->setIcon(QIcon(QLatin1String(":/images/16/stock-duplicate-16.png")));
     mActionRemoveObjects = new QAction(this);
-    mActionRemoveObjects->setIcon(QIcon(QLatin1String(":/images/16x16/edit-delete.png")));
+    mActionRemoveObjects->setIcon(QIcon(QLatin1String(":/images/16/edit-delete.png")));
     mActionMoveUp = new QAction(this);
-    mActionMoveUp->setIcon(QIcon(QLatin1String(":/images/16x16/go-up.png")));
+    mActionMoveUp->setIcon(QIcon(QLatin1String(":/images/16/go-up.png")));
     mActionMoveDown = new QAction(this);
-    mActionMoveDown->setIcon(QIcon(QLatin1String(":/images/16x16/go-down.png")));
+    mActionMoveDown->setIcon(QIcon(QLatin1String(":/images/16/go-down.png")));
     mActionObjectProperties = new QAction(this);
-    mActionObjectProperties->setIcon(QIcon(QLatin1String(":/images/16x16/document-properties.png")));
+    mActionObjectProperties->setIcon(QIcon(QLatin1String(":/images/16/document-properties.png")));
 
     Utils::setThemeIcon(mActionRemoveObjects, "edit-delete");
     Utils::setThemeIcon(mActionMoveUp, "go-up");
@@ -170,8 +175,8 @@ TileCollisionDock::TileCollisionDock(QWidget *parent)
     auto objectsViewMenu = new QMenu(this);
     objectsViewMenu->addActions(objectsViewActionGroup->actions());
 
-    QIcon objectsViewIcon(QLatin1String("://images/16x16/layer-object.png"));
-    objectsViewIcon.addFile(QLatin1String("://images/32x32/layer-object.png"));
+    QIcon objectsViewIcon(QLatin1String("://images/16/layer-object.png"));
+    objectsViewIcon.addFile(QLatin1String("://images/32/layer-object.png"));
 
     auto objectsViewButton = new QToolButton;
     objectsViewButton->setMenu(objectsViewMenu);
@@ -191,7 +196,7 @@ TileCollisionDock::TileCollisionDock(QWidget *parent)
     rightToolBar->addWidget(zoomComboBox);
 
     auto horizontal = new QHBoxLayout;
-    horizontal->setSpacing(qRound(Utils::dpiScaled(5)));
+    horizontal->setSpacing(Utils::dpiScaled(5));
     horizontal->addWidget(toolsToolBar, 1);
     horizontal->addWidget(rightToolBar);
 
@@ -214,6 +219,11 @@ TileCollisionDock::TileCollisionDock(QWidget *parent)
     retranslateUi();
     selectedObjectsChanged();   // disables actions
 
+    ActionManager::registerAction(mActionDuplicateObjects, "DuplicateObjects");
+    ActionManager::registerAction(mActionRemoveObjects, "RemoveObjects");
+    ActionManager::registerAction(mActionMoveUp, "MoveObjectsUp");
+    ActionManager::registerAction(mActionMoveDown, "MoveObjectsDown");
+
     setWidget(widget);
 }
 
@@ -224,16 +234,14 @@ TileCollisionDock::~TileCollisionDock()
 
 void TileCollisionDock::saveState()
 {
-    QSettings *settings = Preferences::instance()->settings();
-    settings->setValue(QLatin1String(OBJECTS_VIEW_VISIBILITY), QVariant::fromValue(mObjectsViewVisibility).toString());
-    settings->setValue(QLatin1String(COLLISION_DOCK_SPLITTER_STATE), mObjectsViewSplitter->saveState());
+    preferences::objectsViewVisibility = QVariant::fromValue(mObjectsViewVisibility).toString();
+    preferences::splitterState = mObjectsViewSplitter->saveState();
 }
 
 void TileCollisionDock::restoreState()
 {
-    const QSettings *settings = Preferences::instance()->settings();
-    setObjectsViewVisibility(settings->value(QLatin1String(OBJECTS_VIEW_VISIBILITY), Hidden).value<ObjectsViewVisibility>());
-    mObjectsViewSplitter->restoreState(settings->value(QLatin1String(COLLISION_DOCK_SPLITTER_STATE)).toByteArray());
+    setObjectsViewVisibility(preferences::objectsViewVisibility.get().value<ObjectsViewVisibility>());
+    mObjectsViewSplitter->restoreState(preferences::splitterState);
 }
 
 void TileCollisionDock::setTilesetDocument(TilesetDocument *tilesetDocument)
@@ -244,11 +252,92 @@ void TileCollisionDock::setTilesetDocument(TilesetDocument *tilesetDocument)
     mTilesetDocument = tilesetDocument;
 
     if (mTilesetDocument) {
+        connect(mTilesetDocument, &Document::changed,
+                this, &TileCollisionDock::documentChanged);
         connect(mTilesetDocument, &TilesetDocument::tileObjectGroupChanged,
                 this, &TileCollisionDock::tileObjectGroupChanged);
         connect(mTilesetDocument, &TilesetDocument::tilesetTileOffsetChanged,
                 this, &TileCollisionDock::tilesetTileOffsetChanged);
     }
+}
+
+QList<QObject *> TileCollisionDock::selectedObjectsForScript() const
+{
+    QList<QObject*> objects;
+
+    if (!mDummyMapDocument)
+        return objects;
+
+    auto &editableManager = EditableManager::instance();
+    auto editableTileset = mTilesetDocument->editable();
+    const auto &originalObjects = mTile->objectGroup()->objects();
+
+    for (MapObject *mapObject : mDummyMapDocument->selectedObjects()) {
+        const int id = mapObject->id();
+        auto it = std::find_if(originalObjects.begin(), originalObjects.end(),
+                               [id] (MapObject *o) { return o->id() == id; });
+
+        if (it != originalObjects.end()) {
+            MapObject *oo = *it;
+            objects.append(editableManager.editableMapObject(editableTileset, oo));
+        }
+    }
+
+    return objects;
+}
+
+void TileCollisionDock::setSelectedObjectsFromScript(const QList<QObject *> &selectedObjects)
+{
+    if (!mDummyMapDocument)
+        return;
+
+    QList<MapObject*> objectsToSelect;
+
+    for (QObject *object : selectedObjects) {
+        if (auto clonedObject = clonedObjectForScriptObject(qobject_cast<EditableMapObject*>(object)))
+            objectsToSelect.append(clonedObject);
+        else
+            return;
+    }
+
+    mDummyMapDocument->setSelectedObjects(objectsToSelect);
+}
+
+void TileCollisionDock::focusObject(EditableMapObject *object)
+{
+    if (!mDummyMapDocument)
+        return;
+
+    if (auto clonedObject = clonedObjectForScriptObject(object)) {
+        emit mDummyMapDocument->focusMapObjectRequested(clonedObject);
+        mObjectsView->ensureVisible(clonedObject);
+    }
+}
+
+MapObject *TileCollisionDock::clonedObjectForScriptObject(EditableMapObject *scriptObject)
+{
+    if (!scriptObject) {
+        ScriptManager::instance().throwError(QCoreApplication::translate("Script Errors", "Not an object"));
+        return nullptr;
+    }
+    if (scriptObject->asset() != mTilesetDocument->editable()) {
+        ScriptManager::instance().throwError(QCoreApplication::translate("Script Errors", "Object not from this asset"));
+        return nullptr;
+    }
+
+    const auto objectGroup = static_cast<ObjectGroup*>(mDummyMapDocument->map()->layerAt(1));
+    const auto &clonedObjects = objectGroup->objects();
+    const int id = scriptObject->id();
+
+    const auto it = std::find_if(clonedObjects.begin(), clonedObjects.end(),
+                                 [id] (MapObject *o) { return o->id() == id; });
+
+    if (it == clonedObjects.end()) {
+        ScriptManager::instance().throwError(QCoreApplication::translate("Script Errors", "Object not found"));
+        return nullptr;
+    }
+
+    return *it;
 }
 
 void TileCollisionDock::setTile(Tile *tile)
@@ -293,8 +382,7 @@ void TileCollisionDock::setTile(Tile *tile)
         mDummyMapDocument = MapDocumentPtr::create(std::move(map));
         mDummyMapDocument->setAllowHidingObjects(false);
         mDummyMapDocument->setAllowTileObjects(false);
-        mDummyMapDocument->setCurrentLayer(objectGroup);
-        mDummyMapDocument->setSelectedLayers({objectGroup});
+        mDummyMapDocument->switchCurrentLayer(objectGroup);
 
         mMapScene->setMapDocument(mDummyMapDocument.data());
         mObjectsView->setMapDocument(mDummyMapDocument.data());
@@ -345,6 +433,32 @@ void TileCollisionDock::applyChanges()
     mApplyingChanges = false;
 }
 
+void TileCollisionDock::documentChanged(const ChangeEvent &change)
+{
+    if (!mTile || !mTile->objectGroup() || mApplyingChanges)
+        return;
+
+    switch (change.type) {
+    case ChangeEvent::MapObjectsAdded:
+    case ChangeEvent::MapObjectsChanged:
+    case ChangeEvent::MapObjectsRemoved: {
+        auto &mapObjects = static_cast<const MapObjectsEvent&>(change).mapObjects;
+        bool affectsTile = std::any_of(mapObjects.begin(),
+                                       mapObjects.end(),
+                                       [og = mTile->objectGroup()] (MapObject *mapObject) {
+            return mapObject->objectGroup() == og;
+        });
+
+        if (affectsTile)
+            tileObjectGroupChanged(mTile);
+
+        break;
+    }
+    default:
+        break;
+    }
+}
+
 void TileCollisionDock::tileObjectGroupChanged(Tile *tile)
 {
     if (mTile != tile)
@@ -369,8 +483,7 @@ void TileCollisionDock::tileObjectGroupChanged(Tile *tile)
     objectGroup->setDrawOrder(ObjectGroup::IndexOrder);
 
     layerModel->insertLayer(nullptr, 1, objectGroup);
-    mDummyMapDocument->setCurrentLayer(objectGroup);
-    mDummyMapDocument->setSelectedLayers({objectGroup});
+    mDummyMapDocument->switchCurrentLayer(objectGroup);
     mObjectsView->setRootIndex(mObjectsView->layerViewIndex(objectGroup));
 
     mToolManager->selectTool(selectedTool);
@@ -385,7 +498,9 @@ void TileCollisionDock::tilesetTileOffsetChanged(Tileset *tileset)
 
     auto tileLayer = mDummyMapDocument->map()->layerAt(0);
     auto tileOffset = tileset->tileOffset();
-    mDummyMapDocument->layerModel()->setLayerOffset(tileLayer, -tileOffset);
+    tileLayer->setOffset(-tileOffset);
+
+    emit mDummyMapDocument->changed(LayerChangeEvent(tileLayer, LayerChangeEvent::OffsetProperty));
 }
 
 void TileCollisionDock::cut()
@@ -559,9 +674,9 @@ void TileCollisionDock::retranslateUi()
 
     mActionDuplicateObjects->setText(tr("Duplicate Objects"));
     mActionRemoveObjects->setText(tr("Remove Objects"));
-    mActionMoveUp->setToolTip(tr("Move Objects Up"));
-    mActionMoveDown->setToolTip(tr("Move Objects Down"));
-    mActionObjectProperties->setToolTip(tr("Object Properties"));
+    mActionMoveUp->setText(tr("Move Objects Up"));
+    mActionMoveDown->setText(tr("Move Objects Down"));
+    mActionObjectProperties->setText(tr("Object Properties"));
 }
 
 } // namespace Tiled

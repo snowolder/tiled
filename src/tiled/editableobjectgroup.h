@@ -38,7 +38,7 @@ public:
     Q_INVOKABLE explicit EditableObjectGroup(const QString &name = QString(),
                                              QObject *parent = nullptr);
 
-    EditableObjectGroup(EditableMap *map,
+    EditableObjectGroup(EditableAsset *asset,
                         ObjectGroup *objectGroup,
                         QObject *parent = nullptr);
 
@@ -52,11 +52,10 @@ public:
     Q_INVOKABLE void addObject(Tiled::EditableMapObject *editableMapObject);
     QColor color() const;
 
+    ObjectGroup *objectGroup() const;
+
 public slots:
     void setColor(const QColor &color);
-
-private:
-    ObjectGroup *objectGroup() const;
 };
 
 

@@ -104,10 +104,19 @@ void BrushItem::setMap(const SharedMap &map)
     update();
 }
 
+void BrushItem::setMap(const SharedMap &map, const QRegion &region)
+{
+    mMap = map;
+    mRegion = region;
+
+    updateBoundingRect();
+    update();
+}
+
 /**
  * Changes the position of the tile layer, if one is set.
  */
-void BrushItem::setTileLayerPosition(const QPoint &pos)
+void BrushItem::setTileLayerPosition(QPoint pos)
 {
     if (!mTileLayer)
         return;
@@ -225,4 +234,7 @@ void BrushItem::updateBoundingRect()
                          qMin(0, -drawMargins.top()),
                          qMax(0, drawMargins.right()),
                          qMax(0, drawMargins.bottom()));
+
+    // Adjust for border drawn at tile selection edges
+    mBoundingRect.adjust(-1, -1, 1, 1);
 }

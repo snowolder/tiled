@@ -4,6 +4,7 @@ import qbs.File
 QtGuiApplication {
     name: "tiledquick"
     targetName: name
+    builtByDefault: false
     condition: Qt.core.versionMinor > 10
 
     Depends {
@@ -18,7 +19,7 @@ QtGuiApplication {
 
     cpp.includePaths: ["."]
     cpp.rpaths: qbs.targetOS.contains("darwin") ? ["@loader_path/../Frameworks"] : ["$ORIGIN/../lib"]
-    cpp.cxxLanguageVersion: "c++11"
+    cpp.cxxLanguageVersion: "c++14"
 
     files: [
         "fonts/fonts.qrc",

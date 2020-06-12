@@ -20,6 +20,7 @@
 
 #include "scriptedtool.h"
 
+#include "brushitem.h"
 #include "editablemap.h"
 #include "mapdocument.h"
 #include "pluginmanager.h"
@@ -27,21 +28,24 @@
 #include "tile.h"
 #include "tilesetdocument.h"
 
+#include <QCoreApplication>
 #include <QJSEngine>
 #include <QKeyEvent>
+#include <QQmlEngine>
 
 namespace Tiled {
 
-ScriptedTool::ScriptedTool(QJSValue object, QObject *parent)
-    : AbstractTileTool(QStringLiteral("<unnamed tool>"), QIcon(), QKeySequence(), nullptr, parent)
-    , mScriptObject(object)
+ScriptedTool::ScriptedTool(Id id, QJSValue object, QObject *parent)
+    : AbstractTileTool(id, QStringLiteral("<unnamed tool>"), QIcon(), QKeySequence(), nullptr, parent)
+    , mScriptObject(std::move(object))
 {
-    const QJSValue nameProperty = object.property(QStringLiteral("name"));
-    if (nameProperty.isString()) {
-        const QString name = nameProperty.toString();
-        if (!name.isEmpty())
-            setName(name);
-    }
+    const QJSValue nameProperty = mScriptObject.property(QStringLiteral("name"));
+    if (nameProperty.isString())
+        setName(nameProperty.toString());
+
+    const QJSValue iconProperty = mScriptObject.property(QStringLiteral("icon"));
+    if (iconProperty.isString())
+        setIconFileName(iconProperty.toString());
 
     // Make members of ScriptedTool available through the original object
     auto &scriptManager = ScriptManager::instance();
@@ -74,6 +78,28 @@ EditableTile *ScriptedTool::editableTile() const
     }
 
     return nullptr;
+}
+
+EditableMap *ScriptedTool::preview() const
+{
+    const auto &map = brushItem()->map();
+    if (!map)
+        return nullptr;
+
+    auto editableMap = new EditableMap(map->clone());
+    QQmlEngine::setObjectOwnership(editableMap, QQmlEngine::JavaScriptOwnership);
+    return editableMap;
+}
+
+void ScriptedTool::setPreview(EditableMap *editableMap)
+{
+    if (!editableMap) {
+        ScriptManager::instance().throwNullArgError(0);
+        return;
+    }
+    // todo: filter any non-tilelayers out of the map?
+    auto map = editableMap->map()->clone();
+    brushItem()->setMap(SharedMap { map.release() });
 }
 
 void ScriptedTool::activate(MapScene *scene)
@@ -125,6 +151,10 @@ void ScriptedTool::mouseMoved(const QPointF &pos, Qt::KeyboardModifiers modifier
 
 void ScriptedTool::mousePressed(QGraphicsSceneMouseEvent *event)
 {
+    AbstractTileTool::mousePressed(event);
+    if (event->isAccepted())
+        return;
+
     QJSValueList args;
     args.append(event->button());
     args.append(event->pos().x());
@@ -132,6 +162,7 @@ void ScriptedTool::mousePressed(QGraphicsSceneMouseEvent *event)
     args.append(static_cast<int>(event->modifiers()));
 
     call(QStringLiteral("mousePressed"), args);
+    event->accept();
 }
 
 void ScriptedTool::mouseReleased(QGraphicsSceneMouseEvent *event)
@@ -181,11 +212,24 @@ bool ScriptedTool::validateToolObject(QJSValue value)
     const QJSValue nameProperty = value.property(QStringLiteral("name"));
 
     if (!nameProperty.isString()) {
-        ScriptManager::instance().throwError(tr("Invalid tool object (requires string 'name' property)"));
+        ScriptManager::instance().throwError(QCoreApplication::translate("Script Errors", "Invalid tool object (requires string 'name' property)"));
         return false;
     }
 
     return true;
+}
+
+void ScriptedTool::setIconFileName(const QString &fileName)
+{
+    if (mIconFileName == fileName)
+        return;
+
+    mIconFileName = fileName;
+
+    QString iconFile = QStringLiteral("ext:");
+    iconFile.append(fileName);
+
+    setIcon(QIcon { iconFile });
 }
 
 void ScriptedTool::mapDocumentChanged(MapDocument *oldDocument,
@@ -202,7 +246,7 @@ void ScriptedTool::mapDocumentChanged(MapDocument *oldDocument,
     call(QStringLiteral("mapChanged"), args);
 }
 
-void ScriptedTool::tilePositionChanged(const QPoint &tilePos)
+void ScriptedTool::tilePositionChanged(QPoint tilePos)
 {
     QJSValueList args;
     args.append(tilePos.x());

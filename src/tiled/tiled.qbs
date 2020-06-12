@@ -13,33 +13,15 @@ QtGuiApplication {
     Depends { name: "qtpropertybrowser" }
     Depends { name: "qtsingleapplication" }
     Depends { name: "ib"; condition: qbs.targetOS.contains("macos") }
-    Depends { name: "Qt"; submodules: ["core", "widgets", "qml"]; versionAtLeast: "5.5" }
+    Depends { name: "Qt"; submodules: ["core", "widgets", "qml"]; versionAtLeast: "5.6" }
 
     property bool qtcRunnable: true
-    property bool macSparkleEnabled: qbs.targetOS.contains("macos") && project.sparkleEnabled
-    property bool winSparkleEnabled: qbs.targetOS.contains("windows") && project.sparkleEnabled
 
-    property string sparkleDir: {
-        if (qbs.targetOS.contains("windows")) {
-            if (qbs.architecture === "x86_64")
-                return "winsparkle/x64"
-            else
-                return "winsparkle/x86"
-        } else if (qbs.targetOS.contains("macos")) {
-            return "/Library/Frameworks/Sparkle.framework"
-        }
-    }
+    cpp.includePaths: [
+        ".",
+        "../../zstd/lib"
+    ]
 
-    cpp.includePaths: ["."]
-    cpp.frameworks: {
-        var frameworks = [];
-        if (qbs.targetOS.contains("macos")) {
-            frameworks.push("Foundation");
-            if (project.sparkleEnabled)
-                frameworks.push("Sparkle", "AppKit");
-        }
-        return frameworks;
-    }
     cpp.useRPaths: project.useRPaths
     cpp.rpaths: {
         if (qbs.targetOS.contains("darwin"))
@@ -50,7 +32,7 @@ QtGuiApplication {
             return ["$ORIGIN/../lib"];
     }
     cpp.useCxxPrecompiledHeader: qbs.buildVariant != "debug"
-    cpp.cxxLanguageVersion: "c++11"
+    cpp.cxxLanguageVersion: "c++14"
 
     cpp.defines: {
         var defs = [
@@ -65,8 +47,10 @@ QtGuiApplication {
         ];
         if (project.snapshot)
             defs.push("TILED_SNAPSHOT");
-        if (project.sparkleEnabled)
-            defs.push("TILED_SPARKLE");
+
+        if (project.enableZstd)
+            defs.push("TILED_ZSTD_SUPPORT");
+
         return defs;
     }
 
@@ -92,6 +76,8 @@ QtGuiApplication {
         "abstracttiletool.h",
         "abstracttool.cpp",
         "abstracttool.h",
+        "abstractworldtool.cpp",
+        "abstractworldtool.h",
         "actionmanager.cpp",
         "actionmanager.h",
         "addpropertydialog.cpp",
@@ -119,8 +105,6 @@ QtGuiApplication {
         "automappingmanager.h",
         "automappingutils.cpp",
         "automappingutils.h",
-        "autoupdater.cpp",
-        "autoupdater.h",
         "brokenlinks.cpp",
         "brokenlinks.h",
         "brushitem.cpp",
@@ -129,6 +113,7 @@ QtGuiApplication {
         "bucketfilltool.h",
         "capturestamphelper.cpp",
         "capturestamphelper.h",
+        "changeevents.h",
         "changeimagelayerproperties.cpp",
         "changeimagelayerproperties.h",
         "changelayer.cpp",
@@ -147,6 +132,8 @@ QtGuiApplication {
         "changeproperties.h",
         "changeselectedarea.cpp",
         "changeselectedarea.h",
+        "changeterrain.cpp",
+        "changeterrain.h",
         "changetile.cpp",
         "changetile.h",
         "changetileanimation.cpp",
@@ -182,9 +169,11 @@ QtGuiApplication {
         "commandlineparser.h",
         "commandmanager.cpp",
         "commandmanager.h",
+        "commandsedit.cpp",
+        "commandsedit.h",
+        "commandsedit.ui",
         "consoledock.cpp",
         "consoledock.h",
-        "containerhelpers.h",
         "createellipseobjecttool.cpp",
         "createellipseobjecttool.h",
         "createobjecttool.cpp",
@@ -207,6 +196,9 @@ QtGuiApplication {
         "document.h",
         "documentmanager.cpp",
         "documentmanager.h",
+        "donationdialog.cpp",
+        "donationdialog.h",
+        "donationdialog.ui",
         "editableasset.cpp",
         "editableasset.h",
         "editablegrouplayer.cpp",
@@ -227,6 +219,8 @@ QtGuiApplication {
         "editableobjectgroup.h",
         "editableselectedarea.cpp",
         "editableselectedarea.h",
+        "editableterrain.cpp",
+        "editableterrain.h",
         "editabletile.cpp",
         "editabletile.h",
         "editabletilelayer.cpp",
@@ -250,6 +244,8 @@ QtGuiApplication {
         "filechangedwarning.h",
         "fileedit.cpp",
         "fileedit.h",
+        "filteredit.cpp",
+        "filteredit.h",
         "flexiblescrollbar.cpp",
         "flexiblescrollbar.h",
         "flipmapobjects.cpp",
@@ -269,6 +265,12 @@ QtGuiApplication {
         "imagelayeritem.h",
         "clickablelabel.cpp",
         "clickablelabel.h",
+        "issuescounter.cpp",
+        "issuescounter.h",
+        "issuesdock.cpp",
+        "issuesdock.h",
+        "issuesmodel.cpp",
+        "issuesmodel.h",
         "languagemanager.cpp",
         "languagemanager.h",
         "layerdock.cpp",
@@ -279,6 +281,8 @@ QtGuiApplication {
         "layermodel.h",
         "layeroffsettool.cpp",
         "layeroffsettool.h",
+        "locatorwidget.cpp",
+        "locatorwidget.h",
         "magicwandtool.h",
         "magicwandtool.cpp",
         "main.cpp",
@@ -301,16 +305,12 @@ QtGuiApplication {
         "mapobjectmodel.h",
         "mapscene.cpp",
         "mapscene.h",
-        "mapsdock.cpp",
-        "mapsdock.h",
         "mapview.cpp",
         "mapview.h",
         "minimap.cpp",
         "minimapdock.cpp",
         "minimapdock.h",
         "minimap.h",
-        "minimaprenderer.cpp",
-        "minimaprenderer.h",
         "movelayer.cpp",
         "movelayer.h",
         "movemapobject.cpp",
@@ -329,11 +329,27 @@ QtGuiApplication {
         "newtilesetdialog.cpp",
         "newtilesetdialog.h",
         "newtilesetdialog.ui",
+        "newversionbutton.cpp",
+        "newversionbutton.h",
+        "newversionchecker.cpp",
+        "newversionchecker.h",
+        "newversiondialog.cpp",
+        "newversiondialog.h",
+        "newversiondialog.ui",
         "noeditorwidget.cpp",
         "noeditorwidget.h",
         "noeditorwidget.ui",
         "objectgroupitem.cpp",
         "objectgroupitem.h",
+        "objectrefdialog.cpp",
+        "objectrefdialog.h",
+        "objectrefdialog.ui",
+        "objectrefedit.cpp",
+        "objectrefedit.h",
+        "objectreferenceitem.cpp",
+        "objectreferenceitem.h",
+        "objectreferencetool.cpp",
+        "objectreferencetool.h",
         "objectsdock.cpp",
         "objectsdock.h",
         "objectselectionitem.cpp",
@@ -342,8 +358,6 @@ QtGuiApplication {
         "objectselectiontool.h",
         "objectsview.cpp",
         "objectsview.h",
-        "objecttemplatemodel.cpp",
-        "objecttemplatemodel.h",
         "objecttypeseditor.cpp",
         "objecttypeseditor.h",
         "objecttypeseditor.ui",
@@ -356,9 +370,6 @@ QtGuiApplication {
         "offsetmapdialog.ui",
         "painttilelayer.cpp",
         "painttilelayer.h",
-        "patreondialog.cpp",
-        "patreondialog.h",
-        "patreondialog.ui",
         "pluginlistmodel.cpp",
         "pluginlistmodel.h",
         "pointhandle.cpp",
@@ -368,6 +379,15 @@ QtGuiApplication {
         "preferencesdialog.h",
         "preferencesdialog.ui",
         "preferences.h",
+        "project.cpp",
+        "project.h",
+        "projectdock.cpp",
+        "projectdock.h",
+        "projectmodel.cpp",
+        "projectmodel.h",
+        "projectpropertiesdialog.cpp",
+        "projectpropertiesdialog.h",
+        "projectpropertiesdialog.ui",
         "propertiesdock.cpp",
         "propertiesdock.h",
         "propertybrowser.cpp",
@@ -378,10 +398,6 @@ QtGuiApplication {
         "rangeset.h",
         "regionvaluetype.cpp",
         "regionvaluetype.h",
-        "renamelayer.cpp",
-        "renamelayer.h",
-        "renameterrain.cpp",
-        "renameterrain.h",
         "renamewangset.cpp",
         "renamewangset.h",
         "reparentlayers.cpp",
@@ -403,14 +419,21 @@ QtGuiApplication {
         "resizetilelayer.h",
         "reversingproxymodel.cpp",
         "reversingproxymodel.h",
+        "reversingrecursivefiltermodel.h",
         "rotatemapobject.cpp",
         "rotatemapobject.h",
         "scriptedaction.cpp",
         "scriptedaction.h",
-        "scriptedmapformat.cpp",
-        "scriptedmapformat.h",
+        "scriptedfileformat.cpp",
+        "scriptedfileformat.h",
         "scriptedtool.cpp",
         "scriptedtool.h",
+        "scriptfile.cpp",
+        "scriptfile.h",
+        "scriptfileformatwrappers.cpp",
+        "scriptfileformatwrappers.h",
+        "scriptfileinfo.cpp",
+        "scriptfileinfo.h",
         "scriptmanager.cpp",
         "scriptmanager.h",
         "scriptmodule.cpp",
@@ -419,20 +442,25 @@ QtGuiApplication {
         "selectionrectangle.h",
         "selectsametiletool.cpp",
         "selectsametiletool.h",
+        "session.cpp",
+        "session.h",
         "shapefilltool.cpp",
         "shapefilltool.h",
+        "shortcutsettingspage.cpp",
+        "shortcutsettingspage.h",
+        "shortcutsettingspage.ui",
         "snaphelper.cpp",
         "snaphelper.h",
         "stampactions.cpp",
         "stampactions.h",
         "stampbrush.cpp",
         "stampbrush.h",
-        "standardautoupdater.cpp",
-        "standardautoupdater.h",
         "stylehelper.cpp",
         "stylehelper.h",
         "swaptiles.cpp",
         "swaptiles.h",
+        "tabbar.cpp",
+        "tabbar.h",
         "templatesdock.cpp",
         "templatesdock.h",
         "terrainbrush.cpp",
@@ -530,12 +558,17 @@ QtGuiApplication {
         "wangtemplatemodel.h",
         "wangtemplateview.cpp",
         "wangtemplateview.h",
+        "worlddocument.cpp",
+        "worlddocument.h",
+        "worldmovemaptool.cpp",
+        "worldmovemaptool.h",
         "zoomable.cpp",
         "zoomable.h",
     ]
 
     Properties {
         condition: qbs.targetOS.contains("macos")
+        cpp.frameworks: ["Foundation"]
         cpp.cxxFlags: ["-Wno-unknown-pragmas"]
         bundle.identifierPrefix: "org.mapeditor"
         ib.appIconName: "tiled-icon-mac"
@@ -565,55 +598,12 @@ QtGuiApplication {
         fileTagsFilter: product.type
     }
 
-    Properties {
-        condition: macSparkleEnabled
-        cpp.systemFrameworkPaths: outer.concat("/Library/Frameworks")
-    }
-    Group {
-        condition: macSparkleEnabled
-        name: "SparkleAutoUpdater"
-        files: ["sparkleautoupdater.mm"]
-    }
     Group {
         condition: qbs.targetOS.contains("macos")
         name: "Public DSA Key File"
         files: ["../../dist/dsa_pub.pem"]
         qbs.install: true
         qbs.installDir: "Tiled.app/Contents/Resources"
-    }
-    Group {
-        condition: macSparkleEnabled
-        name: "Sparkle framework"
-        prefix: sparkleDir + "/"
-        files: "**"
-        fileTags: []    // files should only be copied
-        qbs.install: true
-        qbs.installDir: "Tiled.app/Contents/Frameworks/Sparkle.framework"
-        qbs.installSourceBase: prefix
-    }
-
-    Properties {
-        condition: winSparkleEnabled
-        cpp.includePaths: [".", "winsparkle/include"]
-        cpp.libraryPaths: [sparkleDir]
-        cpp.dynamicLibraries: ["WinSparkle"]
-    }
-    Group {
-        name: "WinSparkle"
-        condition: winSparkleEnabled
-        files: [
-            "winsparkleautoupdater.cpp",
-            "winsparkleautoupdater.h",
-        ]
-    }
-    Group {
-        name: "WinSparkle DLL"
-        condition: winSparkleEnabled
-        qbs.install: true
-        qbs.installDir: ""
-        files: [
-            sparkleDir + "/WinSparkle.dll"
-        ]
     }
 
     Group {
@@ -667,7 +657,7 @@ QtGuiApplication {
         condition: qbs.targetOS.contains("linux")
         qbs.install: true
         qbs.installDir: "share/icons/hicolor/16x16/apps"
-        files: [ "images/16x16/tiled.png" ]
+        files: [ "images/16/tiled.png" ]
     }
 
     Group {
@@ -675,7 +665,7 @@ QtGuiApplication {
         condition: qbs.targetOS.contains("linux")
         qbs.install: true
         qbs.installDir: "share/icons/hicolor/32x32/apps"
-        files: [ "images/32x32/tiled.png" ]
+        files: [ "images/32/tiled.png" ]
     }
 
     Group {
@@ -691,7 +681,7 @@ QtGuiApplication {
         condition: qbs.targetOS.contains("linux")
         qbs.install: true
         qbs.installDir: "share/icons/hicolor/16x16/mimetypes"
-        files: [ "images/16x16/application-x-tiled.png" ]
+        files: [ "images/16/application-x-tiled.png" ]
     }
 
     Group {
@@ -699,7 +689,7 @@ QtGuiApplication {
         condition: qbs.targetOS.contains("linux")
         qbs.install: true
         qbs.installDir: "share/icons/hicolor/32x32/mimetypes"
-        files: [ "images/32x32/application-x-tiled.png" ]
+        files: [ "images/32/application-x-tiled.png" ]
     }
 
     Group {

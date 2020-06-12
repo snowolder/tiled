@@ -21,6 +21,9 @@
 
 #pragma once
 
+#include "changeevents.h"
+#include "id.h"
+
 #include <QCursor>
 #include <QGraphicsSceneMouseEvent>
 #include <QIcon>
@@ -32,6 +35,7 @@
 class QEvent;
 class QKeyEvent;
 class QToolBar;
+class QUndoStack;
 
 namespace Tiled {
 
@@ -56,9 +60,10 @@ class AbstractTool : public QObject
 {
     Q_OBJECT
 
-    Q_PROPERTY(QString name READ name WRITE setName)
-    Q_PROPERTY(QIcon icon READ icon WRITE setIcon)
-    Q_PROPERTY(QKeySequence shortcut READ shortcut WRITE setShortcut)
+    Q_PROPERTY(QByteArray id READ idName CONSTANT)
+    Q_PROPERTY(QString name READ name WRITE setName NOTIFY changed)
+    Q_PROPERTY(QIcon icon READ icon WRITE setIcon NOTIFY changed)
+    Q_PROPERTY(QKeySequence shortcut READ shortcut WRITE setShortcut NOTIFY changed)
     Q_PROPERTY(QString statusInfo READ statusInfo WRITE setStatusInfo NOTIFY statusInfoChanged)
     Q_PROPERTY(QCursor cursor READ cursor WRITE setCursor NOTIFY cursorChanged)
     Q_PROPERTY(bool enabled READ isEnabled WRITE setEnabled NOTIFY enabledChanged)
@@ -67,10 +72,14 @@ public:
     /**
      * Constructs an abstract tool with the given \a name and \a icon.
      */
-    AbstractTool(const QString &name,
+    AbstractTool(Id id,
+                 const QString &name,
                  const QIcon &icon,
                  const QKeySequence &shortcut,
                  QObject *parent = nullptr);
+
+    Id id() const;
+    QByteArray idName() const;
 
     QString name() const;
     void setName(const QString &name);
@@ -89,6 +98,9 @@ public:
 
     bool isEnabled() const;
     void setEnabled(bool enabled);
+
+    bool isVisible() const;
+    void setVisible(bool visible);
 
     ToolManager *toolManager() const;
     Tile *tile() const;
@@ -159,7 +171,14 @@ public:
 
     void setMapDocument(MapDocument *mapDocument);
 
+    /**
+     * override to use a different undo stack than the one from the document.
+     */
+    virtual QUndoStack* undoStack() { return nullptr; }
+
 protected:
+    virtual void changeEvent(const ChangeEvent &event);
+
     /**
      * Can be used to respond to the map document changing.
      */
@@ -184,9 +203,11 @@ protected:
     virtual void updateEnabledState();
 
 signals:
+    void changed();
     void statusInfoChanged(const QString &statusInfo);
     void cursorChanged(const QCursor &cursor);
     void enabledChanged(bool enabled);
+    void visibleChanged(bool visible);
 
 private:
     friend class ToolManager;
@@ -196,21 +217,28 @@ private:
     QKeySequence mShortcut;
     QString mStatusInfo;
     QCursor mCursor;
-    bool mEnabled;
+    Id mId;
+    bool mEnabled = false;
+    bool mVisible = true;
 
-    ToolManager *mToolManager;
-    MapDocument *mMapDocument;
+    ToolManager *mToolManager = nullptr;
+    MapDocument *mMapDocument = nullptr;
 };
 
+
+inline Id AbstractTool::id() const
+{
+    return mId;
+}
+
+inline QByteArray AbstractTool::idName() const
+{
+    return mId.name();
+}
 
 inline QString AbstractTool::name() const
 {
     return mName;
-}
-
-inline void AbstractTool::setName(const QString &name)
-{
-    mName = name;
 }
 
 inline QIcon AbstractTool::icon() const
@@ -218,20 +246,11 @@ inline QIcon AbstractTool::icon() const
     return mIcon;
 }
 
-inline void AbstractTool::setIcon(const QIcon &icon)
-{
-    mIcon = icon;
-}
-
 inline QKeySequence AbstractTool::shortcut() const
 {
     return mShortcut;
 }
 
-inline void AbstractTool::setShortcut(const QKeySequence &shortcut)
-{
-    mShortcut = shortcut;
-}
 
 inline QString AbstractTool::statusInfo() const
 {
@@ -246,6 +265,11 @@ inline QCursor AbstractTool::cursor() const
 inline bool AbstractTool::isEnabled() const
 {
     return mEnabled;
+}
+
+inline bool AbstractTool::isVisible() const
+{
+    return mVisible;
 }
 
 /**

@@ -27,6 +27,7 @@
 #include "changeproperties.h"
 #include "geometry.h"
 #include "layermodel.h"
+#include "logginginterface.h"
 #include "map.h"
 #include "mapdocument.h"
 #include "mapobject.h"
@@ -42,6 +43,11 @@
 
 using namespace Tiled;
 
+static int wrap(int value, int bound)
+{
+    return (value % bound + bound) % bound;
+}
+
 /*
  * About the order of the methods in this file.
  * The Automapper class has 3 bigger public functions, that is
@@ -50,11 +56,12 @@ using namespace Tiled;
  * are put directly below each of these functions.
  */
 
-AutoMapper::AutoMapper(MapDocument *workingDocument, Map *rules,
+AutoMapper::AutoMapper(MapDocument *workingDocument,
+                       std::unique_ptr<Map> rules,
                        const QString &rulePath)
     : mMapDocument(workingDocument)
     , mMapWork(workingDocument ? workingDocument->map() : nullptr)
-    , mMapRules(rules)
+    , mMapRules(std::move(rules))
     , mLayerInputRegions(nullptr)
     , mLayerOutputRegions(nullptr)
     , mRulePath(rulePath)
@@ -108,6 +115,16 @@ bool AutoMapper::setupRuleMapProperties()
                 mOptions.matchOutsideMap = value.toBool();
                 continue;
             }
+        } else if (name.compare(QLatin1String("OverflowBorder"), Qt::CaseInsensitive) == 0) {
+            if (value.canConvert(QVariant::Bool)) {
+                mOptions.overflowBorder = value.toBool();
+                continue;
+            }
+        } else if (name.compare(QLatin1String("WrapBorder"), Qt::CaseInsensitive) == 0) {
+            if (value.canConvert(QVariant::Bool)) {
+                mOptions.wrapBorder = value.toBool();
+                continue;
+            }
         } else if (name.compare(QLatin1String("AutomappingRadius"), Qt::CaseInsensitive) == 0) {
             if (value.canConvert(QVariant::Int)) {
                 mOptions.autoMappingRadius = value.toInt();
@@ -120,10 +137,25 @@ bool AutoMapper::setupRuleMapProperties()
             }
         }
 
-        mWarning += tr("'%1': Property '%2' = '%3' does not make sense. "
-                       "Ignoring this property.")
-                .arg(mRulePath, name, value.toString()) + QLatin1Char('\n');
+        QString warning = tr("Ignoring unknown property '%2' = '%3' (rule map '%1')")
+                      .arg(mRulePath, name, value.toString());
+
+        WARNING(warning, OpenFile { mRulePath });
+
+        mWarning += warning;
+        mWarning += QLatin1Char('\n');
     }
+
+    // OverflowBorder and WrapBorder make no sense for infinite maps
+    if (mMapWork->infinite()) {
+        mOptions.overflowBorder = false;
+        mOptions.wrapBorder = false;
+    }
+
+    // Each of the border options imply MatchOutsideMap
+    if (mOptions.overflowBorder || mOptions.wrapBorder)
+        mOptions.matchOutsideMap = true;
+
     return true;
 }
 
@@ -145,9 +177,13 @@ void AutoMapper::setupInputLayerProperties(InputLayer &inputLayer)
             }
         }
 
-        mWarning += tr("'%1': Property '%2' = '%3' on layer '%4' does not make sense. "
-                       "Ignoring this property.")
-                .arg(mRulePath, name, value.toString(), inputLayer.tileLayer->name()) + QLatin1Char('\n');
+        QString warning = tr("Ignoring unknown property '%2' = '%3' on layer '%4' (rule map '%1')")
+                      .arg(mRulePath, name, value.toString(), inputLayer.tileLayer->name());
+
+        WARNING(warning, SelectLayer { inputLayer.tileLayer });
+
+        mWarning += warning;
+        mWarning += QLatin1Char('\n');
     }
 }
 
@@ -230,12 +266,6 @@ bool AutoMapper::setupRuleMapTileLayers()
 
             mInputRules.names.insert(name);
 
-            if (!mInputRules.contains(index))
-                mInputRules.insert(index, InputIndex());
-
-            if (!mInputRules[index].contains(name))
-                mInputRules[index].insert(name, InputConditions());
-
             InputLayer inputLayer;
             inputLayer.tileLayer = tileLayer;
             setupInputLayerProperties(inputLayer);
@@ -304,8 +334,8 @@ bool AutoMapper::setupRuleMapTileLayers()
 
 static bool compareRuleRegion(const QRegion &r1, const QRegion &r2)
 {
-    const QPoint &p1 = r1.boundingRect().topLeft();
-    const QPoint &p2 = r2.boundingRect().topLeft();
+    const QPoint p1 = r1.boundingRect().topLeft();
+    const QPoint p2 = r2.boundingRect().topLeft();
     return p1.y() < p2.y() || (p1.y() == p2.y() && p1.x() < p2.x());
 }
 
@@ -434,7 +464,7 @@ bool AutoMapper::setupTilesets()
 {
     Q_ASSERT(mAddedTilesets.isEmpty());
 
-    mMapDocument->unifyTilesets(mMapRules, mAddedTilesets);
+    mMapDocument->unifyTilesets(mMapRules.get(), mAddedTilesets);
 
     for (const SharedTileset &tileset : qAsConst(mAddedTilesets))
         mMapDocument->undoStack()->push(new AddTileset(mMapDocument, tileset));
@@ -465,7 +495,7 @@ void AutoMapper::autoMap(QRegion *where)
     // delete all the relevant area, if the property "DeleteTiles" is set
     if (mOptions.deleteTiles) {
         const QRegion setLayersRegion = computeSetLayersRegion();
-        for (const RuleOutput &translationTable : mLayerList) {
+        for (const RuleOutput &translationTable : qAsConst(mLayerList)) {
             for (const int index : translationTable) {
                 Layer *dstLayer = mMapWork->layerAt(index);
                 const QRegion region = setLayersRegion.intersected(*where);
@@ -607,7 +637,7 @@ static void collectCellsInRegion(const QVector<InputLayer> &list,
 static bool layerMatchesConditions(const TileLayer &setLayer,
                                    const InputConditions &conditions,
                                    const QRegion &ruleRegion,
-                                   const QPoint &offset,
+                                   const QPoint offset,
                                    const AutoMapper::Options &options)
 {
     const auto &listYes = conditions.listYes;
@@ -627,12 +657,23 @@ static bool layerMatchesConditions(const TileLayer &setLayer,
 #endif
         for (int x = rect.left(); x <= rect.right(); ++x) {
             for (int y = rect.top(); y <= rect.bottom(); ++y) {
-                if (!options.matchOutsideMap &&
-                        !setLayer.contains(x + offset.x(), y + offset.y()))
+                int xd = x + offset.x();
+                int yd = y + offset.y();
+
+                if (!options.matchOutsideMap && !setLayer.contains(xd, yd))
                     return false;
 
-                const Cell &setCell = setLayer.cellAt(x + offset.x(),
-                                                      y + offset.y());
+                // Those two options are guaranteed to be false if the map is infinite,
+                // so no "invalid" width/height accessing here.
+                if (options.wrapBorder) {
+                    xd = wrap(xd, setLayer.width());
+                    yd = wrap(yd, setLayer.height());
+                } else if (options.overflowBorder) {
+                    xd = qBound(0, xd, setLayer.width() - 1);
+                    yd = qBound(0, yd, setLayer.height() - 1);
+                }
+
+                const Cell &setCell = setLayer.cellAt(xd, yd);
 
                 // First check listNo. If any tile matches there, we can
                 // immediately know there is no match.
@@ -796,16 +837,12 @@ void AutoMapper::copyMapRegion(const QRegion &region, QPoint offset,
             if (TileLayer *fromTileLayer = from->asTileLayer()) {
                 TileLayer *toTileLayer = to->asTileLayer();
                 Q_ASSERT(toTileLayer); //TODO check this before in prepareAutomap or such!
-                copyTileRegion(fromTileLayer, rect.x(), rect.y(),
-                               rect.width(), rect.height(),
-                               toTileLayer,
+                copyTileRegion(fromTileLayer, rect, toTileLayer,
                                rect.x() + offset.x(), rect.y() + offset.y());
 
             } else if (ObjectGroup *fromObjectGroup = from->asObjectGroup()) {
                 ObjectGroup *toObjectGroup = to->asObjectGroup();
-                copyObjectRegion(fromObjectGroup, rect.x(), rect.y(),
-                                 rect.width(), rect.height(),
-                                 toObjectGroup,
+                copyObjectRegion(fromObjectGroup, rect, toObjectGroup,
                                  rect.x() + offset.x(), rect.y() + offset.y());
             } else {
                 Q_ASSERT(false);
@@ -815,7 +852,7 @@ void AutoMapper::copyMapRegion(const QRegion &region, QPoint offset,
         // Copy any custom properties set on the output layer
         if (!from->properties().isEmpty()) {
             Properties mergedProperties = to->properties();
-            mergedProperties.merge(from->properties());
+            mergeProperties(mergedProperties, from->properties());
 
             if (mergedProperties != to->properties()) {
                 QUndoStack *undoStack = mMapDocument->undoStack();
@@ -826,42 +863,50 @@ void AutoMapper::copyMapRegion(const QRegion &region, QPoint offset,
     }
 }
 
-void AutoMapper::copyTileRegion(const TileLayer *srcLayer, int srcX, int srcY,
-                                int width, int height,
+void AutoMapper::copyTileRegion(const TileLayer *srcLayer, QRect rect,
                                 TileLayer *dstLayer, int dstX, int dstY)
 {
     int startX = dstX;
     int startY = dstY;
 
-    int endX = dstX + width;
-    int endY = dstY + height;
+    int endX = dstX + rect.width();
+    int endY = dstY + rect.height();
 
-    if (!mMapWork->infinite()) {
+    int dwidth = dstLayer->width();
+    int dheight = dstLayer->height();
+
+    if (!mOptions.wrapBorder && !mMapWork->infinite()) {
         startX = qMax(0, startX);
         startY = qMax(0, startY);
-        endX = qMin(dstLayer->width(), endX);
-        endY = qMin(dstLayer->height(), endY);
+        endX = qMin(dwidth, endX);
+        endY = qMin(dheight, endY);
     }
 
-    const int offsetX = srcX - dstX;
-    const int offsetY = srcY - dstY;
+    const int offsetX = rect.x() - dstX;
+    const int offsetY = rect.y() - dstY;
 
     for (int x = startX; x < endX; ++x) {
         for (int y = startY; y < endY; ++y) {
             const Cell &cell = srcLayer->cellAt(x + offsetX, y + offsetY);
             if (!cell.isEmpty()) {
                 // this is without graphics update, it's done afterwards for all
-                dstLayer->setCell(x, y, cell);
+                int xd = x;
+                int yd = y;
+
+                // WrapBorder is only true on finite maps
+                if (mOptions.wrapBorder) {
+                    xd = wrap(xd, dwidth);
+                    yd = wrap(yd, dheight);
+                }
+                dstLayer->setCell(xd, yd, cell);
             }
         }
     }
 }
 
-void AutoMapper::copyObjectRegion(const ObjectGroup *srcLayer, int srcX, int srcY,
-                                  int width, int height,
+void AutoMapper::copyObjectRegion(const ObjectGroup *srcLayer, const QRectF &rect,
                                   ObjectGroup *dstLayer, int dstX, int dstY)
 {
-    const QRectF rect = QRectF(srcX, srcY, width, height);
     const QRectF pixelRect = mMapDocument->renderer()->tileToPixelCoords(rect);
     const QList<MapObject*> objects = objectsInRegion(srcLayer, pixelRect.toAlignedRect());
 
@@ -927,8 +972,7 @@ void AutoMapper::cleanUpRulesMap()
 {
     cleanTilesets();
 
-    delete mMapRules;
-    mMapRules = nullptr;
+    mMapRules.reset();
 
     cleanUpRuleMapLayers();
     mRulesInput.clear();

@@ -186,7 +186,7 @@ QRectF MapObject::screenBounds(const MapRenderer &renderer) const
                       objectSize.width(),
                       objectSize.height());
 
-        align(bounds, alignment());
+        align(bounds, alignment(renderer.map()));
 
         return bounds;
     } else {
@@ -194,7 +194,7 @@ QRectF MapObject::screenBounds(const MapRenderer &renderer) const
         case MapObject::Ellipse:
         case MapObject::Rectangle: {
             QRectF bounds(this->bounds());
-            align(bounds, alignment());
+            align(bounds, alignment(renderer.map()));
             QPolygonF screenPolygon = renderer.pixelToScreenCoords(bounds);
             return screenPolygon.boundingRect();
         }
@@ -215,28 +215,41 @@ QRectF MapObject::screenBounds(const MapRenderer &renderer) const
     return QRectF();
 }
 
-/*
- * This is somewhat of a workaround for dealing with the ways different objects
- * align.
- *
- * Traditional rectangle objects have top-left alignment.
- * Tile objects have bottom-left alignment on orthogonal maps, but
- * bottom-center alignment on isometric maps.
- *
- * Eventually, the object alignment should probably be configurable. For
- * backwards compatibility, it will need to be configurable on a per-object
- * level.
- */
-Alignment MapObject::alignment() const
+Map *MapObject::map() const
 {
-    if (mCell.isEmpty()) {
-        return TopLeft;
-    } else if (mObjectGroup) {
-        if (Map *map = mObjectGroup->map())
-            if (map->orientation() == Map::Isometric)
-                return Bottom;
+    return mObjectGroup ? mObjectGroup->map() : nullptr;
+}
+
+/*
+ * Returns the effective alignment for this object on the given \a map.
+ *
+ * By default, non-tile objects have top-left alignment, while tile objects
+ * have bottom-left alignment on orthogonal maps and bottom-center alignment
+ * on isometric maps.
+ *
+ * For tile objects, the default alignment can be overridden by setting an
+ * alignment on the tileset.
+ */
+Alignment MapObject::alignment(const Map *map) const
+{
+    Alignment alignment = Unspecified;
+
+    if (Tileset *tileset = mCell.tileset())
+        alignment = tileset->objectAlignment();
+
+    if (!map && mObjectGroup)
+        map = mObjectGroup->map();
+
+    if (alignment == Unspecified) {
+        if (mCell.isEmpty())
+            return TopLeft;
+        else if (map && map->orientation() == Map::Isometric)
+            return Bottom;
+
+        return BottomLeft;
     }
-    return BottomLeft;
+
+    return alignment;
 }
 
 /**
@@ -274,10 +287,14 @@ QVariant MapObject::mapObjectProperty(Property property) const
     case TextAlignmentProperty: return QVariant::fromValue(mTextData.alignment);
     case TextWordWrapProperty:  return mTextData.wordWrap;
     case TextColorProperty:     return mTextData.color;
+    case PositionProperty:      return mPos;
     case SizeProperty:          return mSize;
     case RotationProperty:      return mRotation;
     case CellProperty:          Q_ASSERT(false); break;
     case ShapeProperty:         return mShape;
+    case TemplateProperty:      Q_ASSERT(false); break;
+    case CustomProperties:      Q_ASSERT(false); break;
+    case AllProperties:         Q_ASSERT(false); break;
     }
     return QVariant();
 }
@@ -285,18 +302,22 @@ QVariant MapObject::mapObjectProperty(Property property) const
 void MapObject::setMapObjectProperty(Property property, const QVariant &value)
 {
     switch (property) {
-    case NameProperty:          mName = value.toString(); break;
-    case TypeProperty:          mType = value.toString(); break;
-    case VisibleProperty:       mVisible = value.toBool(); break;
+    case NameProperty:          setName(value.toString()); break;
+    case TypeProperty:          setType(value.toString()); break;
+    case VisibleProperty:       setVisible(value.toBool()); break;
     case TextProperty:          mTextData.text = value.toString(); break;
     case TextFontProperty:      mTextData.font = value.value<QFont>(); break;
     case TextAlignmentProperty: mTextData.alignment = value.value<Qt::Alignment>(); break;
     case TextWordWrapProperty:  mTextData.wordWrap = value.toBool(); break;
     case TextColorProperty:     mTextData.color = value.value<QColor>(); break;
-    case SizeProperty:          mSize = value.toSizeF(); break;
-    case RotationProperty:      mRotation = value.toReal(); break;
+    case PositionProperty:      setPosition(value.toPointF()); break;
+    case SizeProperty:          setSize(value.toSizeF()); break;
+    case RotationProperty:      setRotation(value.toReal()); break;
     case CellProperty:          Q_ASSERT(false); break;
-    case ShapeProperty:         mShape = value.value<Shape>(); break;
+    case ShapeProperty:         setShape(value.value<Shape>()); break;
+    case TemplateProperty:      Q_ASSERT(false); break;
+    case CustomProperties:      Q_ASSERT(false); break;
+    case AllProperties:         Q_ASSERT(false); break;
     }
 }
 
@@ -417,7 +438,7 @@ void MapObject::detachFromTemplate()
     // All non-overridden properties are already synchronized, so we only need
     // to merge the custom properties.
     Properties newProperties = base->properties();
-    newProperties.merge(properties());
+    Tiled::mergeProperties(newProperties, properties());
     setProperties(newProperties);
 
     setObjectTemplate(nullptr);
@@ -447,7 +468,7 @@ void MapObject::flipPolygonObject(const QTransform &flipTransform)
     QPointF oldBottomLeftPoint = polygonToMapTransform.map(polygonFlip.map(QPointF(0, 0)));
     QPointF newPos = flipTransform.map(oldBottomLeftPoint);
 
-    mPolygon = polygonFlip.map(mPolygon);
+    setPolygon(polygonFlip.map(mPolygon));
     setPosition(newPos);
 }
 

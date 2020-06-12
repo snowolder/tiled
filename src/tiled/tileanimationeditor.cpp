@@ -24,6 +24,7 @@
 #include "changetileanimation.h"
 #include "mapobject.h"
 #include "rangeset.h"
+#include "session.h"
 #include "tile.h"
 #include "tileanimationdriver.h"
 #include "tiled.h"
@@ -31,16 +32,12 @@
 #include "tilesetdocument.h"
 #include "utils.h"
 #include "zoomable.h"
-#include "preferences.h"
 
 #include <QAbstractListModel>
 #include <QCloseEvent>
 #include <QShortcut>
 #include <QUndoStack>
 #include <QMimeData>
-#include <QSettings>
-
-static const char * const FRAME_DURATION_KEY = "Animation/FrameDuration";
 
 namespace Tiled {
 
@@ -51,11 +48,7 @@ class FrameListModel : public QAbstractListModel
 public:
     explicit FrameListModel(QObject *parent = nullptr)
         : QAbstractListModel(parent)
-        , mTileset(nullptr)
     {
-        // Restore previously used FrameDuration
-        QSettings *s = Preferences::instance()->settings();
-        mDefaultDuration = s->value(QLatin1String(FRAME_DURATION_KEY), 100).toInt();
     }
 
     int defaultDuration() const;
@@ -79,11 +72,11 @@ public:
     const QVector<Frame> &frames() const;
 
 private:
-    int mDefaultDuration;
+    SessionOption<int> mDefaultDuration { "frame.defaultDuration", 100 };
 
     void addFrame(const Frame &frame);
 
-    const Tileset *mTileset;
+    const Tileset *mTileset = nullptr;
     QVector<Frame> mFrames;
 };
 
@@ -221,10 +214,11 @@ bool FrameListModel::dropMimeData(const QMimeData *data, Qt::DropAction action,
         QByteArray encodedData = data->data(QLatin1String(TILES_MIMETYPE));
         QDataStream stream(&encodedData, QIODevice::ReadOnly);
 
+        const int defaultDuration = mDefaultDuration;
         while (!stream.atEnd()) {
             Frame frame;
             stream >> frame.tileId;
-            frame.duration = mDefaultDuration;
+            frame.duration = defaultDuration;
             newFrames.append(frame);
         }
     }
@@ -275,7 +269,6 @@ const QVector<Frame> &FrameListModel::frames() const
 void FrameListModel::setDefaultFrameTime(int duration)
 {
     mDefaultDuration = duration;
-    Preferences::instance()->settings()->setValue(QLatin1String(FRAME_DURATION_KEY), duration);
 }
 
 
@@ -301,6 +294,9 @@ TileAnimationEditor::TileAnimationEditor(QWidget *parent)
 
     connect(mUi->tilesetView, &QAbstractItemView::doubleClicked,
             this, &TileAnimationEditor::addFrameForTileAt);
+
+    connect(mUi->tilesetView->zoomable(), &Zoomable::scaleChanged,
+            this, &TileAnimationEditor::updatePreviewPixmap);
 
     connect(mFrameListModel, &QAbstractItemModel::dataChanged,
             this, &TileAnimationEditor::framesEdited);
@@ -333,8 +329,8 @@ TileAnimationEditor::TileAnimationEditor(QWidget *parent)
     Utils::restoreGeometry(this);
 
     mUi->horizontalSplitter->setSizes(QList<int>()
-                                      << qRound(Utils::dpiScaled(128))
-                                      << qRound(Utils::dpiScaled(512)));
+                                      << Utils::dpiScaled(128)
+                                      << Utils::dpiScaled(512));
 }
 
 TileAnimationEditor::~TileAnimationEditor()
@@ -539,11 +535,8 @@ void TileAnimationEditor::advancePreviewAnimation(int ms)
         frame = frames.at(mPreviewFrameIndex);
     }
 
-    if (previousTileId != frame.tileId) {
-        Tileset *tileset = mTile->tileset();
-        if (const Tile *tile = tileset->findTile(frame.tileId))
-            mUi->preview->setPixmap(tile->image());
-    }
+    if (previousTileId != frame.tileId)
+        updatePreviewPixmap();
 }
 
 void TileAnimationEditor::resetPreview()
@@ -551,17 +544,33 @@ void TileAnimationEditor::resetPreview()
     mPreviewFrameIndex = 0;
     mPreviewUnusedTime = 0;
 
-    if (mTile && mTile->isAnimated()) {
-        const int tileId = mTile->frames().first().tileId;
-        Tileset *tileset = mTile->tileset();
-        if (Tile *tile = tileset->findTile(tileId)) {
-            mUi->preview->setPixmap(tile->image());
-            return;
-        }
-    }
+    if (updatePreviewPixmap())
+        return;
 
     mUi->preview->setText(QApplication::translate("TileAnimationEditor",
                                                   "Preview"));
+}
+
+bool TileAnimationEditor::updatePreviewPixmap()
+{
+    if (!mTile || !mTile->isAnimated())
+        return false;
+
+    const QVector<Frame> &frames = mTile->frames();
+    const Tileset *tileset = mTile->tileset();
+    const Frame frame = frames.at(mPreviewFrameIndex);
+
+    if (Tile *tile = tileset->findTile(frame.tileId)) {
+        const QPixmap &image = tile->image();
+        const qreal scale = mUi->tilesetView->zoomable()->scale();
+
+        const int w = qRound(image.width() * scale);
+        const int h = qRound(image.height() * scale);
+        mUi->preview->setPixmap(image.scaled(w, h, Qt::KeepAspectRatio));
+        return true;
+    }
+
+    return false;
 }
 
 } // namespace Tiled

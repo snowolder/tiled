@@ -28,6 +28,8 @@
 #include <QDebug>
 #include <QJsonArray>
 
+#include <qtcompat_p.h>
+
 namespace Tiled {
 
 class TileStampData : public QSharedData
@@ -56,12 +58,12 @@ TileStampData::TileStampData(const TileStampData &other)
 {
     // deep-copy the map data
     for (TileStampVariation &variation : variations)
-        variation.map = variation.map->clone();
+        variation.map = variation.map->clone().release();
 }
 
 TileStampData::~TileStampData()
 {
-    for (const TileStampVariation &variation : variations)
+    for (const TileStampVariation &variation : qAsConst(variations))
         delete variation.map;
 }
 
@@ -134,7 +136,7 @@ void TileStamp::setProbability(int index, qreal probability)
 QSize TileStamp::maxSize() const
 {
     QSize size;
-    for (const TileStampVariation &variation : d->variations) {
+    for (const TileStampVariation &variation : qAsConst(d->variations)) {
         size.setWidth(qMax(size.width(), variation.map->width()));
         size.setHeight(qMax(size.height(), variation.map->height()));
     }
@@ -187,7 +189,7 @@ const TileStampVariation &TileStamp::randomVariation() const
     Q_ASSERT(!d->variations.isEmpty());
 
     RandomPicker<const TileStampVariation *> randomPicker;
-    for (const TileStampVariation &variation : d->variations)
+    for (const TileStampVariation &variation : qAsConst(d->variations))
         randomPicker.add(&variation, variation.probability);
 
     return *randomPicker.pick();
@@ -294,7 +296,7 @@ QJsonObject TileStamp::toJson(const QDir &dir) const
         json.insert(QLatin1String("quickStampIndex"), d->quickStampIndex);
 
     QJsonArray variations;
-    for (const TileStampVariation &variation : d->variations) {
+    for (const TileStampVariation &variation : qAsConst(d->variations)) {
         MapToVariantConverter converter;
         QVariant mapVariant = converter.toVariant(*variation.map, dir);
         QJsonValue mapJson = QJsonValue::fromVariant(mapVariant);
@@ -316,8 +318,8 @@ TileStamp TileStamp::fromJson(const QJsonObject &json, const QDir &mapDir)
     stamp.setName(json.value(QLatin1String("name")).toString());
     stamp.setQuickStampIndex(static_cast<int>(json.value(QLatin1String("quickStampIndex")).toDouble(-1)));
 
-    QJsonArray variations = json.value(QLatin1String("variations")).toArray();
-    for (const QJsonValue value : variations) {
+    const QJsonArray variations = json.value(QLatin1String("variations")).toArray();
+    for (const QJsonValue &value : variations) {
         QJsonObject variationJson = value.toObject();
 
         QVariant mapVariant = variationJson.value(QLatin1String("map")).toVariant();

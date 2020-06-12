@@ -34,15 +34,20 @@ class ScriptedTool : public AbstractTileTool
 {
     Q_OBJECT
 
+    Q_PROPERTY(QString icon READ iconFileName WRITE setIconFileName)
     Q_PROPERTY(Tiled::EditableMap *map READ editableMap)
     Q_PROPERTY(Tiled::EditableTile *selectedTile READ editableTile)
+    Q_PROPERTY(Tiled::EditableMap *preview READ preview WRITE setPreview)
 
 public:
-    explicit ScriptedTool(QJSValue object, QObject *parent = nullptr);
+    explicit ScriptedTool(Id id, QJSValue object, QObject *parent = nullptr);
     ~ScriptedTool() override;
 
     EditableMap *editableMap() const;
     EditableTile *editableTile() const;
+
+    EditableMap *preview() const;
+    void setPreview(EditableMap *editableMap);
 
     void activate(MapScene *scene) override;
     void deactivate(MapScene *scene) override;
@@ -59,10 +64,13 @@ public:
 
     static bool validateToolObject(QJSValue value);
 
+    QString iconFileName() const;
+    void setIconFileName(const QString &fileName);
+
 protected:
     void mapDocumentChanged(MapDocument *oldDocument, MapDocument *newDocument) override;
 
-    void tilePositionChanged(const QPoint &tilePos) override;
+    void tilePositionChanged(QPoint tilePos) override;
     void updateStatusInfo() override;
 
     void updateEnabledState() override;
@@ -71,9 +79,15 @@ private:
     bool call(const QString &methodName, const QJSValueList &args = QJSValueList());
 
     QJSValue mScriptObject;
-    BrushItem *mBrushItem;
     MapScene *mScene = nullptr;
+    QString mIconFileName;
 };
+
+
+inline QString ScriptedTool::iconFileName() const
+{
+    return mIconFileName;
+}
 
 } // namespace Tiled
 

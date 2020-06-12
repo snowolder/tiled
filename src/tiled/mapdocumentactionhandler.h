@@ -80,6 +80,8 @@ public:
     QAction *actionSelectNextLayer() const { return mActionSelectNextLayer; }
     QAction *actionMoveLayersUp() const { return mActionMoveLayersUp; }
     QAction *actionMoveLayersDown() const { return mActionMoveLayersDown; }
+    QAction *actionToggleSelectedLayers() const { return mActionToggleSelectedLayers; }
+    QAction *actionToggleLockSelectedLayers() const { return mActionToggleLockSelectedLayers; }
     QAction *actionToggleOtherLayers() const { return mActionToggleOtherLayers; }
     QAction *actionToggleLockOtherLayers() const { return mActionToggleLockOtherLayers; }
     QAction *actionLayerProperties() const { return mActionLayerProperties; }
@@ -121,6 +123,8 @@ public slots:
     void moveLayersUp();
     void moveLayersDown();
     void removeLayers();
+    void toggleSelectedLayers();
+    void toggleLockSelectedLayers();
     void toggleOtherLayers();
     void toggleLockOtherLayers();
     void layerProperties();
@@ -131,10 +135,9 @@ public slots:
 
     void selectAllInstances(const ObjectTemplate *objectTemplate);
 
-private slots:
+private:
     void updateActions();
 
-private:
     MapDocument *mMapDocument;
 
     QAction *mActionSelectAll;
@@ -159,6 +162,8 @@ private:
     QAction *mActionSelectNextLayer;
     QAction *mActionMoveLayersUp;
     QAction *mActionMoveLayersDown;
+    QAction *mActionToggleSelectedLayers;
+    QAction *mActionToggleLockSelectedLayers;
     QAction *mActionToggleOtherLayers;
     QAction *mActionToggleLockOtherLayers;
     QAction *mActionLayerProperties;

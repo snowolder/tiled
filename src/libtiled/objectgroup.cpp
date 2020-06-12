@@ -35,6 +35,8 @@
 #include "mapobject.h"
 #include "tile.h"
 
+#include "qtcompat_p.h"
+
 #include <cmath>
 
 using namespace Tiled;
@@ -57,13 +59,10 @@ ObjectGroup::~ObjectGroup()
 
 void ObjectGroup::addObject(MapObject *object)
 {
-    mObjects.append(object);
-    object->setObjectGroup(this);
-    if (mMap && object->id() == 0)
-        object->setId(mMap->takeNextObjectId());
+    insertObject(mObjects.size(), object);
 }
 
-void ObjectGroup::addObject(std::unique_ptr<MapObject> &&object)
+void ObjectGroup::addObject(std::unique_ptr<MapObject> object)
 {
     addObject(object.release());
 }
@@ -81,8 +80,8 @@ int ObjectGroup::removeObject(MapObject *object)
     const int index = mObjects.indexOf(object);
     Q_ASSERT(index != -1);
 
-    mObjects.removeAt(index);
-    object->setObjectGroup(nullptr);
+    removeObjectAt(index);
+
     return index;
 }
 
@@ -151,7 +150,7 @@ bool ObjectGroup::referencesTileset(const Tileset *tileset) const
 void ObjectGroup::replaceReferencesToTileset(Tileset *oldTileset,
                                              Tileset *newTileset)
 {
-    for (MapObject *object : mObjects) {
+    for (MapObject *object : qAsConst(mObjects)) {
         if (object->cell().tileset() == oldTileset) {
             Cell cell = object->cell();
             cell.setTile(newTileset, cell.tileId());
@@ -169,7 +168,7 @@ void ObjectGroup::offsetObjects(const QPointF &offset,
 
     const bool boundsValid = bounds.isValid();
 
-    for (MapObject *object : mObjects) {
+    for (MapObject *object : qAsConst(mObjects)) {
         const QPointF objectCenter = object->bounds().center();
         if (boundsValid && !bounds.contains(objectCenter))
             continue;

@@ -85,7 +85,7 @@ public:
     /**
      * Constructs a map document around the given map.
      */
-    MapDocument(std::unique_ptr<Map> map, const QString &fileName = QString());
+    MapDocument(std::unique_ptr<Map> map);
 
     ~MapDocument() override;
 
@@ -106,6 +106,9 @@ public:
 
     FileFormat *writerFormat() const override;
     void setWriterFormat(MapFormat *format);
+
+    QString lastExportFileName() const override;
+    void setLastExportFileName(const QString &fileName) override;
 
     MapFormat *exportFormat() const override;
     void setExportFormat(FileFormat *format) override;
@@ -132,12 +135,15 @@ public:
     const QList<Layer*> &selectedLayers() const { return mSelectedLayers; }
     void setSelectedLayers(const QList<Layer*> &layers);
 
+    void switchCurrentLayer(Layer *layer);
+    void switchSelectedLayers(const QList<Layer*> &layers);
+
     /**
      * Resize this map to the given \a size, while at the same time shifting
      * the contents by \a offset. If \a removeObjects is true then all objects
      * which are outside the map will be removed.
      */
-    void resizeMap(const QSize &size, const QPoint &offset, bool removeObjects);
+    void resizeMap(QSize size, QPoint offset, bool removeObjects);
 
     void autocropMap();
 
@@ -146,7 +152,7 @@ public:
      * wraps on the X or Y axis.
      */
     void offsetMap(const QList<Layer *> &layers,
-                   const QPoint &offset,
+                   QPoint offset,
                    const QRect &bounds,
                    bool wrapX, bool wrapY);
 
@@ -161,6 +167,8 @@ public:
     void moveLayersUp(const QList<Layer *> &layers);
     void moveLayersDown(const QList<Layer *> &layers);
     void removeLayers(const QList<Layer *> &layers);
+    void toggleLayers(const QList<Layer *> &layers);
+    void toggleLockLayers(const QList<Layer *> &layers);
     void toggleOtherLayers(const QList<Layer *> &layers);
     void toggleLockOtherLayers(const QList<Layer *> &layers);
 
@@ -242,6 +250,8 @@ public:
 
     bool templateAllowed(const ObjectTemplate *objectTemplate) const;
 
+    void checkIssues() override;
+
 signals:
     /**
      * Emitted when the selected tile region changes. Sends the currently
@@ -272,6 +282,24 @@ signals:
     void focusMapObjectRequested(MapObject *object);
 
     /**
+     * Emitted when some part of the UI wants the user to pick an object
+     * (currently only used to set an object reference).
+     */
+    void mapObjectPickRequest();
+
+    /**
+     * Emitted to cancel a previously started request for picking an object.
+     */
+    void cancelMapObjectPickRequest();
+
+    /**
+     * Emitted when an object was picked. Response to mapObjectPickRequest.
+     *
+     * \a object can be nullptr if the picking was canceled.
+     */
+    void mapObjectPicked(MapObject *object);
+
+    /**
      * Emitted when the map size or its tile size changes.
      */
     void mapChanged();
@@ -279,7 +307,6 @@ signals:
     void layerAdded(Layer *layer);
     void layerAboutToBeRemoved(GroupLayer *parentLayer, int index);
     void layerRemoved(Layer *layer);
-    void layerChanged(Layer *layer);
 
     /**
      * Emitted after a new layer was added and the name should be edited.
@@ -308,12 +335,6 @@ signals:
     void tileLayerChanged(TileLayer *layer, TileLayerChangeFlags flags);
 
     /**
-     * Should be emitted when changing the color or drawing order of an object
-     * group.
-     */
-    void objectGroupChanged(ObjectGroup *objectGroup);
-
-    /**
      * Should be emitted when changing the image or the transparent color of
      * an image layer.
      */
@@ -328,23 +349,24 @@ signals:
     void objectTemplateReplaced(const ObjectTemplate *newObjectTemplate,
                                 const ObjectTemplate *oldObjectTemplate);
 
-    void objectsAdded(const QList<MapObject*> &objects);
     void objectsInserted(ObjectGroup *objectGroup, int first, int last);
-    void objectsRemoved(const QList<MapObject*> &objects);
-    void objectsChanged(const QList<MapObject*> &objects);
-    void objectsTypeChanged(const QList<MapObject*> &objects);
     void objectsIndexChanged(ObjectGroup *objectGroup, int first, int last);
 
     // emitted from the TilesetDocument
     void tilesetNameChanged(Tileset *tileset);
-    void tilesetTileOffsetChanged(Tileset *tileset);
+    void tilesetTilePositioningChanged(Tileset *tileset);
     void tileTypeChanged(Tile *tile);
     void tileImageSourceChanged(Tile *tile);
     void tileProbabilityChanged(Tile *tile);
     void tileObjectGroupChanged(Tile *tile);
 
-private slots:
-    void onObjectsRemoved(const QList<MapObject*> &objects);
+public slots:
+    void updateTemplateInstances(const ObjectTemplate *objectTemplate);
+    void selectAllInstances(const ObjectTemplate *objectTemplate);
+    void deselectObjects(const QList<MapObject*> &objects);
+
+private:
+    void onChanged(const ChangeEvent &change);
 
     void onMapObjectModelRowsInserted(const QModelIndex &parent, int first, int last);
     void onMapObjectModelRowsInsertedOrRemoved(const QModelIndex &parent, int first, int last);
@@ -355,12 +377,6 @@ private slots:
     void onLayerAboutToBeRemoved(GroupLayer *groupLayer, int index);
     void onLayerRemoved(Layer *layer);
 
-public slots:
-    void updateTemplateInstances(const ObjectTemplate *objectTemplate);
-    void selectAllInstances(const ObjectTemplate *objectTemplate);
-    void deselectObjects(const QList<MapObject*> &objects);
-
-private:
     void moveObjectIndex(const MapObject *object, int count);
 
     /*
@@ -369,7 +385,6 @@ private:
      */
     QPointer<MapFormat> mReaderFormat;
     QPointer<MapFormat> mWriterFormat;
-    QPointer<MapFormat> mExportFormat;
     std::unique_ptr<Map> mMap;
     LayerModel *mLayerModel;
     QRegion mSelectedArea;
@@ -377,7 +392,7 @@ private:
     QList<MapObject*> mSelectedObjects;
     MapObject *mHoveredMapObject;       /**< Map object with mouse on top. */
     std::unique_ptr<MapRenderer> mRenderer;
-    Layer *mCurrentLayer;
+    Layer *mCurrentLayer = nullptr;
     MapObjectModel *mMapObjectModel;
     bool mAllowHidingObjects = true;
     bool mAllowTileObjects = true;

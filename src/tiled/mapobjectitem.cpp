@@ -39,6 +39,7 @@
 #include <QPainter>
 
 #include <cmath>
+#include <memory>
 
 using namespace Tiled;
 
@@ -163,11 +164,7 @@ void MapObjectItem::paint(QPainter *painter,
         painter->setPen(pen);
         painter->drawLines(lines, 4);
 
-#if QT_VERSION >= 0x050600
         const qreal devicePixelRatio = painter->device()->devicePixelRatioF();
-#else
-        const int devicePixelRatio = painter->device()->devicePixelRatio();
-#endif
         const qreal dashLength = std::ceil(Utils::dpiScaled(3) * devicePixelRatio);
 
         // Draw a black dashed line above the white line
@@ -203,9 +200,9 @@ void MapObjectItem::expandBoundsToCoverTileCollisionObjects(QRectF &bounds)
     std::unique_ptr<MapRenderer> renderer;
 
     if (tileset->orientation() == Tileset::Orthogonal)
-        renderer.reset(new OrthogonalRenderer(&map));
+        renderer = std::make_unique<OrthogonalRenderer>(&map);
     else
-        renderer.reset(new IsometricRenderer(&map));
+        renderer = std::make_unique<IsometricRenderer>(&map);
 
     const QTransform tileTransform = tileCollisionObjectsTransform(*tile);
 

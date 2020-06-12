@@ -47,10 +47,10 @@ class EditableLayer : public EditableObject
     Q_PROPERTY(bool isImageLayer READ isImageLayer CONSTANT)
 
 public:
-    explicit EditableLayer(std::unique_ptr<Layer> &&layer,
+    explicit EditableLayer(std::unique_ptr<Layer> layer,
                            QObject *parent = nullptr);
 
-    EditableLayer(EditableMap *map,
+    EditableLayer(EditableAsset *asset,
                   Layer *layer,
                   QObject *parent = nullptr);
     ~EditableLayer() override;
@@ -70,9 +70,10 @@ public:
     Layer *layer() const;
 
     void detach();
-    void attach(EditableMap *map);
+    void attach(EditableAsset *asset);
     void hold();
-    void release();
+    Layer *release();
+    bool isOwning() const;
 
 public slots:
     void setName(const QString &name);
@@ -138,6 +139,11 @@ inline bool EditableLayer::isImageLayer() const
 inline Layer *EditableLayer::layer() const
 {
     return static_cast<Layer*>(object());
+}
+
+inline bool EditableLayer::isOwning() const
+{
+    return mDetachedLayer.get() == layer();
 }
 
 } // namespace Tiled

@@ -39,9 +39,10 @@
 using namespace Tiled;
 
 LayerOffsetTool::LayerOffsetTool(QObject *parent)
-    : AbstractTool(tr("Offset Layers"),
-                   QIcon(QLatin1String(":images/22x22/stock-tool-move-22.png")),
-                   QKeySequence(tr("M")),
+    : AbstractTool("LayerOffsetTool",
+                   tr("Offset Layers"),
+                   QIcon(QLatin1String(":images/22/stock-tool-move-22.png")),
+                   QKeySequence(Qt::Key_M),
                    parent)
     , mMousePressed(false)
     , mDragging(false)
@@ -55,6 +56,7 @@ void LayerOffsetTool::mouseEntered()
 
 void LayerOffsetTool::mouseLeft()
 {
+    setStatusInfo(QString());
 }
 
 void LayerOffsetTool::activate(MapScene *)
@@ -109,7 +111,8 @@ void LayerOffsetTool::mouseMoved(const QPointF &pos, Qt::KeyboardModifiers modif
     for (const DraggingLayer &dragging : qAsConst(mDraggingLayers)) {
         QPointF newOffset = dragging.oldOffset + (pos - mMouseSceneStart);
         SnapHelper(mapDocument()->renderer(), modifiers).snap(newOffset);
-        mapDocument()->layerModel()->setLayerOffset(dragging.layer, newOffset);
+        dragging.layer->setOffset(newOffset);
+        emit mapDocument()->changed(LayerChangeEvent(dragging.layer, LayerChangeEvent::OffsetProperty));
     }
     mApplyingChange = false;
 }
@@ -138,7 +141,6 @@ void LayerOffsetTool::modifiersChanged(Qt::KeyboardModifiers)
 void LayerOffsetTool::languageChanged()
 {
     setName(tr("Offset Layers"));
-    setShortcut(QKeySequence(tr("M")));
 }
 
 void LayerOffsetTool::updateEnabledState()
@@ -211,8 +213,10 @@ void LayerOffsetTool::abortDrag()
         return;
 
     mApplyingChange = true;
-    for (const DraggingLayer &dragging : qAsConst(draggedLayers))
-        mapDocument()->layerModel()->setLayerOffset(dragging.layer, dragging.oldOffset);
+    for (const DraggingLayer &dragging : qAsConst(draggedLayers)) {
+        dragging.layer->setOffset(dragging.oldOffset);
+        emit mapDocument()->changed(LayerChangeEvent(dragging.layer, LayerChangeEvent::OffsetProperty));
+    }
     mApplyingChange = false;
 }
 
@@ -235,7 +239,7 @@ void LayerOffsetTool::finishDrag()
     mApplyingChange = true;
     for (const DraggingLayer &dragging : qAsConst(draggedLayers)) {
         const QPointF newOffset = dragging.layer->offset();
-        mapDocument()->layerModel()->setLayerOffset(dragging.layer, dragging.oldOffset);
+        dragging.layer->setOffset(dragging.oldOffset);  // restore old offset for undo command
         undoStack->push(new SetLayerOffset(mapDocument(),
                                            dragging.layer,
                                            newOffset));

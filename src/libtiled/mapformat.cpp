@@ -46,6 +46,9 @@ std::unique_ptr<Map> readMap(const QString &fileName, QString *error)
                 *error = QString();
         }
 
+        if (map)
+            map->fileName = fileName;
+
         return map;
     }
 
@@ -60,12 +63,16 @@ std::unique_ptr<Map> readMap(const QString &fileName, QString *error)
             *error = QString();
     }
 
+    if (map)
+        map->fileName = fileName;
+
     return map;
 }
 
 MapFormat *findSupportingMapFormat(const QString &fileName)
 {
-    for (MapFormat *format : PluginManager::objects<MapFormat>())
+    const auto mapFormats = PluginManager::objects<MapFormat>();
+    for (MapFormat *format : mapFormats)
         if (format->supportsFile(fileName))
             return format;
     return nullptr;

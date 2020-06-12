@@ -61,14 +61,16 @@ public:
 
     void languageChanged() override;
 
-private slots:
+protected:
+    void changeEvent(const ChangeEvent &event) override;
+
+private:
     void updateHandles();
     void updateHandlesAndOrigin();
     void updateHandleVisibility();
 
-    void objectsRemoved(const QList<MapObject *> &);
+    void objectsAboutToBeRemoved(const QList<MapObject *> &);
 
-private:
     enum Action {
         NoAction,
         Selecting,

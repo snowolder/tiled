@@ -27,6 +27,7 @@
 #include "tilelayer.h"
 #include "compression.h"
 
+#include <QCoreApplication>
 #include <QFile>
 
 namespace Droidcraft {
@@ -35,7 +36,6 @@ DroidcraftPlugin::DroidcraftPlugin()
 {
 }
 
-// Reader
 std::unique_ptr<Tiled::Map> DroidcraftPlugin::read(const QString &fileName)
 {
     using namespace Tiled;
@@ -67,7 +67,7 @@ std::unique_ptr<Tiled::Map> DroidcraftPlugin::read(const QString &fileName)
     map->addTileset(mapTileset);
 
     // Fill layer
-    std::unique_ptr<TileLayer> mapLayer(new TileLayer("map", 0, 0, 48, 48));
+    auto mapLayer = std::make_unique<TileLayer>("map", 0, 0, 48, 48);
 
     // Load
     for (int i = 0; i < 48 * 48; i++) {
@@ -90,9 +90,10 @@ bool DroidcraftPlugin::supportsFile(const QString &fileName) const
     return fileName.endsWith(QLatin1String(".dat"), Qt::CaseInsensitive);
 }
 
-// Writer
-bool DroidcraftPlugin::write(const Tiled::Map *map, const QString &fileName)
+bool DroidcraftPlugin::write(const Tiled::Map *map, const QString &fileName, Options options)
 {
+    Q_UNUSED(options)
+
     using namespace Tiled;
 
     // Check layer count and type
@@ -127,7 +128,7 @@ bool DroidcraftPlugin::write(const Tiled::Map *map, const QString &fileName)
     // Write QByteArray
     SaveFile file(fileName);
     if (!file.open(QIODevice::WriteOnly)) {
-        mError = tr("Could not open file for writing.");
+        mError = QCoreApplication::translate("File Errors", "Could not open file for writing.");
         return false;
     }
 

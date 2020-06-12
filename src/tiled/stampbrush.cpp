@@ -45,10 +45,11 @@
 using namespace Tiled;
 
 StampBrush::StampBrush(QObject *parent)
-    : AbstractTileTool(tr("Stamp Brush"),
+    : AbstractTileTool("StampTool",
+                       tr("Stamp Brush"),
                        QIcon(QLatin1String(
-                               ":images/22x22/stock-tool-clone.png")),
-                       QKeySequence(tr("B")),
+                               ":images/22/stock-tool-clone.png")),
+                       QKeySequence(Qt::Key_B),
                        nullptr,
                        parent)
     , mBrushBehavior(Free)
@@ -81,7 +82,7 @@ void StampBrush::deactivate(MapScene *scene)
     AbstractTileTool::deactivate(scene);
 }
 
-void StampBrush::tilePositionChanged(const QPoint &pos)
+void StampBrush::tilePositionChanged(QPoint pos)
 {
     if (mBrushBehavior == Paint) {
         // Draw a line from the previous point to avoid gaps, skipping the
@@ -113,39 +114,42 @@ void StampBrush::tilePositionChanged(const QPoint &pos)
 
 void StampBrush::mousePressed(QGraphicsSceneMouseEvent *event)
 {
-    if (!brushItem()->isVisible())
-        return;
-
-    if (event->button() == Qt::LeftButton) {
-        switch (mBrushBehavior) {
-        case Line:
-            mStampReference = tilePosition();
-            mBrushBehavior = LineStartSet;
-            break;
-        case Circle:
-            mStampReference = tilePosition();
-            mBrushBehavior = CircleMidSet;
-            break;
-        case LineStartSet:
-            doPaint();
-            mStampReference = tilePosition();
-            break;
-        case CircleMidSet:
-            doPaint();
-            break;
-        case Paint:
-            beginPaint();
-            break;
-        case Free:
-            beginPaint();
-            mBrushBehavior = Paint;
-            break;
-        case Capture:
-            break;
+    if (brushItem()->isVisible()) {
+        if (event->button() == Qt::LeftButton) {
+            switch (mBrushBehavior) {
+            case Line:
+                mStampReference = tilePosition();
+                mBrushBehavior = LineStartSet;
+                break;
+            case Circle:
+                mStampReference = tilePosition();
+                mBrushBehavior = CircleMidSet;
+                break;
+            case LineStartSet:
+                doPaint();
+                mStampReference = tilePosition();
+                break;
+            case CircleMidSet:
+                doPaint();
+                break;
+            case Paint:
+                beginPaint();
+                break;
+            case Free:
+                beginPaint();
+                mBrushBehavior = Paint;
+                break;
+            case Capture:
+                break;
+            }
+            return;
+        } else if (event->button() == Qt::RightButton && event->modifiers() == Qt::NoModifier) {
+            beginCapture();
+            return;
         }
-    } else if (event->button() == Qt::RightButton) {
-        beginCapture();
     }
+
+    AbstractTileTool::mousePressed(event);
 }
 
 void StampBrush::mouseReleased(QGraphicsSceneMouseEvent *event)
@@ -205,7 +209,6 @@ void StampBrush::modifiersChanged(Qt::KeyboardModifiers modifiers)
 void StampBrush::languageChanged()
 {
     setName(tr("Stamp Brush"));
-    setShortcut(QKeySequence(tr("B")));
 
     mStampActions->languageChanged();
 }
@@ -482,7 +485,7 @@ void StampBrush::drawPreviewLayer(const QVector<QPoint> &points)
                     if ((stampStaggerIndex == mapStaggerIndex) == topIsOdd) {
                         Map *shiftedMap = shiftedCopies.value(map);
                         if (!shiftedMap) {
-                            shiftedMap = map->clone();
+                            shiftedMap = map->clone().release();
                             shiftedCopies.insert(map, shiftedMap);
 
                             LayerIterator it(shiftedMap, Layer::TileLayerType);
@@ -497,7 +500,7 @@ void StampBrush::drawPreviewLayer(const QVector<QPoint> &points)
                     if ((stampStaggerIndex == mapStaggerIndex) == leftIsOdd) {
                         Map *shiftedMap = shiftedCopies.value(map);
                         if (!shiftedMap) {
-                            shiftedMap = map->clone();
+                            shiftedMap = map->clone().release();
                             shiftedCopies.insert(map, shiftedMap);
 
                             LayerIterator it(shiftedMap, Layer::TileLayerType);
@@ -572,9 +575,6 @@ void StampBrush::updatePreview(QPoint tilePos)
     if (mBrushBehavior == Capture) {
         mPreviewMap.clear();
         tileRegion = mCaptureStampHelper.capturedArea(tilePos);
-    } else if (mStamp.isEmpty() && !mIsWangFill) {
-        mPreviewMap.clear();
-        tileRegion = QRect(tilePos, tilePos);
     } else {
         switch (mBrushBehavior) {
         case LineStartSet:
@@ -590,7 +590,6 @@ void StampBrush::updatePreview(QPoint tilePos)
             // while finding the mid point, there is no need to show
             // the (maybe bigger than 1x1) stamp
             mPreviewMap.clear();
-            tileRegion = QRect(tilePos, tilePos);
             break;
         case Line:
         case Free:
@@ -598,11 +597,15 @@ void StampBrush::updatePreview(QPoint tilePos)
             drawPreviewLayer(QVector<QPoint>() << tilePos);
             break;
         }
+
+        if (mPreviewMap)
+            tileRegion = mPreviewMap->tileRegion();
+
+        if (tileRegion.isEmpty())
+            tileRegion = QRect(tilePos, tilePos);
     }
 
-    brushItem()->setMap(mPreviewMap);
-    if (!tileRegion.isEmpty())
-        brushItem()->setTileRegion(tileRegion);
+    brushItem()->setMap(mPreviewMap, tileRegion);
 }
 
 void StampBrush::setRandom(bool value)

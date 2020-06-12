@@ -46,7 +46,8 @@ public:
         WangFill
     };
 
-    AbstractTileFillTool(const QString &name,
+    AbstractTileFillTool(Id id,
+                         const QString &name,
                          const QIcon &icon,
                          const QKeySequence &shortcut,
                          BrushItem *brushItem = nullptr,
@@ -86,7 +87,7 @@ protected:
     void mapDocumentChanged(MapDocument *oldDocument,
                             MapDocument *newDocument) override;
 
-    void tilePositionChanged(const QPoint &tilePos) override;
+    void tilePositionChanged(QPoint tilePos) override;
 
     QList<Layer *> targetLayers() const override;
 

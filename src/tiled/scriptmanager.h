@@ -22,10 +22,9 @@
 
 #include "filesystemwatcher.h"
 
-#include <QObject>
 #include <QJSValue>
-
-#include <memory>
+#include <QObject>
+#include <QStringList>
 
 class QJSEngine;
 
@@ -41,6 +40,10 @@ public:
     static ScriptManager &instance();
     static void deleteInstance();
 
+    void ensureInitialized();
+
+    const QString &extensionsPath() const;
+
     ScriptModule *module() const;
     QJSEngine *engine() const;
 
@@ -49,27 +52,45 @@ public:
 
     QJSValue evaluateFile(const QString &fileName);
 
-    void evaluateStartupScripts();
+    /**
+     * Create a new global identifier ($0, $1, $2, ...) for the value. Returns
+     * the name of the identifier.
+     */
+    QString createTempValue(const QJSValue &value);
 
-    void checkError(QJSValue value, const QString &program = QString());
+    bool checkError(QJSValue value, const QString &program = QString());
     void throwError(const QString &message);
+    void throwNullArgError(int argNumber);
 
-    void reset();
-
-    void scriptFilesChanged(const QStringList &scriptFiles);
+    void refreshExtensionsPaths();
 
 private:
     explicit ScriptManager(QObject *parent = nullptr);
+    ~ScriptManager() = default;
 
+    void reset();
     void initialize();
 
-    QJSEngine *mEngine;
-    ScriptModule *mModule;
-    FileSystemWatcher mWatcher;
+    void scriptFilesChanged(const QStringList &scriptFiles);
 
-    static std::unique_ptr<ScriptManager> mInstance;
+    void loadExtensions();
+    void loadExtension(const QString &path);
+
+    QJSEngine *mEngine = nullptr;
+    ScriptModule *mModule = nullptr;
+    FileSystemWatcher mWatcher;
+    QString mExtensionsPath;
+    QStringList mExtensionsPaths;
+    int mTempCount = 0;
+
+    static ScriptManager *mInstance;
 };
 
+
+inline const QString &ScriptManager::extensionsPath() const
+{
+    return mExtensionsPath;
+}
 
 inline ScriptModule *ScriptManager::module() const
 {

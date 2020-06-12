@@ -50,6 +50,8 @@ private:
 public:
     static NewsFeed &instance();
 
+    void setEnabled(bool enabled);
+
     void refresh();
 
     void markAllRead();
@@ -70,10 +72,9 @@ signals:
 protected:
     void timerEvent(QTimerEvent *event) override;
 
-private slots:
+private:
     void finished(QNetworkReply *reply);
 
-private:
     void setLastRead(const QDateTime &dateTime);
 
     QNetworkAccessManager *mNetworkAccessManager;

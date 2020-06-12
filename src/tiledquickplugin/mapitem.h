@@ -20,13 +20,14 @@
 
 #pragma once
 
+#include "mapref.h"
+
 #include <QQuickItem>
 
+#include <memory>
+
 namespace Tiled {
-class Map;
 class MapRenderer;
-class Tileset;
-class TileLayer;
 } // namespace Tiled
 
 namespace TiledQuick {
@@ -40,20 +41,20 @@ class TileLayerItem;
 class MapItem : public QQuickItem
 {
     Q_OBJECT
-    Q_ENUMS(Status)
 
-    Q_PROPERTY(Tiled::Map *map READ map WRITE setMap NOTIFY mapChanged)
+    Q_PROPERTY(TiledQuick::MapRef map READ map WRITE setMap RESET unsetMap NOTIFY mapChanged)
     Q_PROPERTY(QRectF visibleArea READ visibleArea WRITE setVisibleArea NOTIFY visibleAreaChanged)
 
 public:
     explicit MapItem(QQuickItem *parent = nullptr);
+    ~MapItem();
 
-    Tiled::Map *map() const;
-    void setMap(Tiled::Map *map);
+    MapRef map() const;
+    void setMap(MapRef map);
+    void unsetMap();
 
     const QRectF &visibleArea() const;
     void setVisibleArea(const QRectF &visibleArea);
-    QRect visibleTileArea(const Tiled::TileLayer *layer) const;
 
     QRectF boundingRect() const;
 
@@ -80,14 +81,23 @@ private:
     Tiled::Map *mMap;
     QRectF mVisibleArea;
 
-    Tiled::MapRenderer *mRenderer;
+    std::unique_ptr<Tiled::MapRenderer> mRenderer;
     QList<TileLayerItem*> mTileLayerItems;
 };
 
 inline const QRectF &MapItem::visibleArea() const
-{ return mVisibleArea; }
+{
+    return mVisibleArea;
+}
 
-inline Tiled::Map *MapItem::map() const
-{ return mMap; }
+inline MapRef MapItem::map() const
+{
+    return mMap;
+}
+
+inline void MapItem::unsetMap()
+{
+    setMap(nullptr);
+}
 
 } // namespace TiledQuick

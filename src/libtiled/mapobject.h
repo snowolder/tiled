@@ -74,8 +74,6 @@ struct TILEDSHARED_EXPORT TextData
  */
 class TILEDSHARED_EXPORT MapObject : public Object
 {
-    Q_OBJECT
-
 public:
     /**
      * Enumerates the different object shapes. Rectangle is the default shape.
@@ -98,18 +96,22 @@ public:
      * Can be used to get/set property values using QVariant.
      */
     enum Property {
-        NameProperty             = 1 << 0,
-        TypeProperty             = 1 << 1,
-        VisibleProperty          = 1 << 2,
-        TextProperty             = 1 << 3,
-        TextFontProperty         = 1 << 4,
-        TextAlignmentProperty    = 1 << 5,
-        TextWordWrapProperty     = 1 << 6,
-        TextColorProperty        = 1 << 7,
-        SizeProperty             = 1 << 8,
-        RotationProperty         = 1 << 9,
-        CellProperty             = 1 << 10,
-        ShapeProperty            = 1 << 11
+        NameProperty            = 1 << 0,
+        TypeProperty            = 1 << 1,
+        VisibleProperty         = 1 << 2,
+        TextProperty            = 1 << 3,
+        TextFontProperty        = 1 << 4,
+        TextAlignmentProperty   = 1 << 5,
+        TextWordWrapProperty    = 1 << 6,
+        TextColorProperty       = 1 << 7,
+        PositionProperty        = 1 << 8,
+        SizeProperty            = 1 << 9,
+        RotationProperty        = 1 << 10,
+        CellProperty            = 1 << 11,
+        ShapeProperty           = 1 << 12,
+        TemplateProperty        = 1 << 13,
+        CustomProperties        = 1 << 14,
+        AllProperties           = 0xFF
     };
 
     Q_DECLARE_FLAGS(ChangedProperties, Property)
@@ -180,10 +182,12 @@ public:
     ObjectGroup *objectGroup() const;
     void setObjectGroup(ObjectGroup *objectGroup);
 
+    Map *map() const;
+
     qreal rotation() const;
     void setRotation(qreal rotation);
 
-    Alignment alignment() const;
+    Alignment alignment(const Map *map = nullptr) const;
 
     bool isVisible() const;
     void setVisible(bool visible);

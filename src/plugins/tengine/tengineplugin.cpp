@@ -28,9 +28,10 @@
 #include "tile.h"
 #include "tilelayer.h"
 
-#include <QTextStream>
+#include <QCoreApplication>
 #include <QHash>
 #include <QList>
+#include <QTextStream>
 
 #include <QtMath>
 
@@ -40,22 +41,24 @@ TenginePlugin::TenginePlugin()
 {
 }
 
-bool TenginePlugin::write(const Tiled::Map *map, const QString &fileName)
+bool TenginePlugin::write(const Tiled::Map *map, const QString &fileName, Options options)
 {
+    Q_UNUSED(options)
+
     using namespace Tiled;
 
     SaveFile file(fileName);
     if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
-        mError = tr("Could not open file for writing.");
+        mError = QCoreApplication::translate("File Errors", "Could not open file for writing.");
         return false;
     }
     QTextStream out(file.device());
 
     // Write the header
-    QString header = map->property("header").toString();
-    for (const QString &line : header.split("\\n")) {
+    const QString header = map->property("header").toString();
+    const auto lines = header.splitRef("\\n");
+    for (const auto &line : lines)
         out << line << endl;
-    }
 
     const int width = map->width();
     const int height = map->height();
